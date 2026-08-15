@@ -16,7 +16,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .coordinator import KampklarCoordinator, KampklarData
-from .parsers import Child, TeamActivity
+from .parsers import Child, TeamActivity, normalize_signup_status
 
 
 async def async_setup_entry(
@@ -94,7 +94,7 @@ def _pending(activities: list[TeamActivity]) -> list[TeamActivity]:
         if a.date
         and a.date >= today
         and not a.signup_locked
-        and (a.signup_status or "").strip().lower() in ("", "ikke svaret")
+        and normalize_signup_status(a.signup_status) == "ikke_svaret"
     ]
 
 
@@ -120,17 +120,18 @@ def _activity_dict(activity: TeamActivity) -> dict[str, Any]:
         "meeting_time": activity.meeting_time,
         "pool": activity.pool,
         "signup_status": activity.signup_status,
+        # Fast nøgle for statussen ("udtaget_bekraeftet" …) så dashboards og
+        # automatiseringer kan matche uden at kende DBU's præcise ordlyd.
+        "signup_status_key": normalize_signup_status(activity.signup_status),
         "signup_locked": activity.signup_locked,
     }
 
 
-def _slug(child: Child) -> str:
-    return f"{child.person_id}_{child.team_id}"
-
-
 def _child_device(entry_id: str, child: Child) -> DeviceInfo:
     return DeviceInfo(
-        identifiers={(DOMAIN, f"{entry_id}_{_slug(child)}")},
+        # Samme identifier som kalenderen bruger, så barnets sensorer og
+        # kalender ligger på én og samme enhed.
+        identifiers={(DOMAIN, f"{entry_id}_{child.key}")},
         # Kort navn — slugges ind i entity_id. Fx "Kampklar Emil" → kampklar_emil_*
         name=f"Kampklar {child.short_name}",
         manufacturer="DBU",

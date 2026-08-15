@@ -17,6 +17,20 @@ DK_MONTHS = {
     "jul": 7, "aug": 8, "sep": 9, "okt": 10, "nov": 11, "dec": 12,
 }
 
+# Tilmeldingsstatusser som mit.dbu.dk bruger: nøgle -> (label, emoji).
+# Til kampe udtager træneren en trup, så der er flere trin end ved træning.
+# Rækkefølgen er den de vises i i indstillingerne.
+SIGNUP_STATUSES: dict[str, tuple[str, str]] = {
+    "tilmeldt": ("Tilmeldt", "✅"),
+    "udtaget_bekraeftet": ("Udtaget (bekræftet)", "⭐"),
+    "udtaget": ("Udtaget", "📋"),
+    "udtaget_ikke_bekraeftet": ("Udtaget (ikke bekræftet)", "⏳"),
+    "til_raadighed": ("Til rådighed", "🟠"),
+    "ikke_svaret": ("Ikke svaret", "❓"),
+    "frameldt": ("Frameldt", "❌"),
+    "andet": ("Andet", "▫️"),
+}
+
 
 @dataclass
 class Child:
@@ -469,6 +483,33 @@ def parse_myteams_chooser(html: str) -> list[ChooserRow]:
             )
         )
     return rows
+
+
+def normalize_signup_status(status: str | None) -> str:
+    """Oversæt DBU's statustekst til en fast nøgle.
+
+    Teksten varierer ("Udtaget", "Udtaget (bekræftet)", "Ikke svaret" …) og
+    DBU har ændret den før, så alt matches løst. Ukendte værdier lander i
+    "andet" — de skal stadig kunne slås til og fra i kalenderen.
+    """
+    text = (status or "").strip().lower()
+    if not text:
+        return "ikke_svaret"
+    if "frameld" in text:
+        return "frameldt"
+    if "udtaget" in text:
+        if "ikke bekræftet" in text:
+            return "udtaget_ikke_bekraeftet"
+        if "bekræftet" in text:
+            return "udtaget_bekraeftet"
+        return "udtaget"
+    if "rådighed" in text:
+        return "til_raadighed"
+    if "tilmeldt" in text:
+        return "tilmeldt"
+    if "ikke svaret" in text:
+        return "ikke_svaret"
+    return "andet"
 
 
 def parse_aspnet_form(html: str) -> dict[str, str]:

@@ -12,6 +12,8 @@ Henter dine børns fodboldaktiviteter, kampe og beskeder fra
   - Mangler tilmelding (state = antal aktiviteter du skal svare på)
 - 👨‍👩‍👦 **Samlede sensorer for hele kontoen** — næste aktivitet, manglende
   tilmeldinger og et overblik over alle børn ét sted
+- ⚙️ **Indstillinger for kalenderen** — vælg hvilke tilmeldingsstatusser og
+  aktivitetstyper der skal med, og se status direkte i begivenhedens titel
 - 📩 **Beskeder fra trænere/klub** — seneste 10 med fuld body cached lokalt
 - 🔁 **Multi-barn-støtte** — nye børn opdages automatisk og får entiteter uden
   genstart af Home Assistant
@@ -89,6 +91,39 @@ Det er skrevet navne-uafhængigt: alle børn hentes fra `sensor.kampklar_boern`,
 så et nyt barn dukker op af sig selv. Kun kalender-kortet skal have hvert
 barns kalender skrevet ind i hånden — det kort kan ikke tage en dynamisk
 liste.
+
+## Indstillinger
+
+**Settings → Devices & Services → Kampklar → Konfigurer.**
+
+Kalenderen kan hurtigt blive støjende, når hvert barn har både træning, kampe
+og stævner. Derfor kan du vælge:
+
+- **Tilmeldingsstatusser** — hvilke aktiviteter der overhovedet kommer i
+  kalenderen. Vil du kun se det barnet faktisk skal til, så slå *Frameldt* fra;
+  vil du kun se kampe han er udtaget til, så vælg kun *Udtaget*-statusserne.
+- **Aktivitetstyper** — tom betyder alle. Listen bygges af de typer din klub
+  rent faktisk bruger (Træning, Kamp, Stævne …).
+- **Status i titlen** — emoji (`⭐ Vestby IF - Nabolaget B`), tekst
+  (`[Udtaget (bekræftet)] …`) eller kun titlen.
+
+DBU's statusser og deres emoji:
+
+| Status | | Betyder |
+|---|---|---|
+| Tilmeldt | ✅ | Du har sagt ja (typisk træning) |
+| Udtaget (bekræftet) | ⭐ | Udtaget til truppen, og du har bekræftet |
+| Udtaget | 📋 | Træneren har udtaget barnet |
+| Udtaget (ikke bekræftet) | ⏳ | Udtaget, mangler din bekræftelse |
+| Til rådighed | 🟠 | Meldt til rådighed, ikke udtaget |
+| Ikke svaret | ❓ | Ingen har svaret endnu |
+| Frameldt | ❌ | Meldt fra |
+| Andet | ▫️ | Ukendt status — vises så den ikke forsvinder lydløst |
+
+Indstillingerne gælder kun kalenderen. Sensorerne viser altid alt, så
+`sensor.kampklar_<navn>_kommende_aktiviteter` stadig kan bruges til at se hvad
+der ellers ligger — hver aktivitet har både `signup_status` og en fast
+`signup_status_key` til brug i templates.
 
 ## Automatiseringer
 

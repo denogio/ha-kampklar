@@ -12,6 +12,7 @@ from datetime import date
 from pathlib import Path
 
 from parsers import (
+    SIGNUP_STATUSES,
     Child,
     assign_display_names,
     discover_children,
@@ -22,6 +23,7 @@ from parsers import (
     parse_myteams,
     parse_myteams_chooser,
     parse_myteams_context,
+    normalize_signup_status,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -241,3 +243,46 @@ def test_dashboard_supplies_person_ids_for_the_children():
     """Vælgeren oplyser ikke person-ID — det kommer fra forsidens links."""
     children = discover_children(parse_dashboard(_load("dashboard")))
     assert [(c.person_id, c.team_id) for c in children] == [(1000000001, 11)]
+
+
+# ── tilmeldingsstatus ───────────────────────────────────────────────────────
+
+
+def test_signup_status_is_normalised_to_stable_keys():
+    """Statusteksten varierer — kalenderfiltret skal have faste nøgler."""
+    cases = {
+        "Tilmeldt": "tilmeldt",
+        "Frameldt": "frameldt",
+        "Ikke svaret": "ikke_svaret",
+        "Udtaget": "udtaget",
+        "Udtaget (bekræftet)": "udtaget_bekraeftet",
+        "Udtaget (ikke bekræftet)": "udtaget_ikke_bekraeftet",
+        "Til rådighed": "til_raadighed",
+    }
+    for text, key in cases.items():
+        assert normalize_signup_status(text) == key, text
+        assert key in SIGNUP_STATUSES
+
+
+def test_missing_status_counts_as_not_answered():
+    assert normalize_signup_status(None) == "ikke_svaret"
+    assert normalize_signup_status("  ") == "ikke_svaret"
+
+
+def test_unknown_status_is_kept_as_andet():
+    """En ukendt status må ikke forsvinde lydløst ud af kalenderen."""
+    assert normalize_signup_status("Skadet") == "andet"
+    assert "andet" in SIGNUP_STATUSES
+
+
+def test_every_status_has_a_label_and_an_emoji():
+    for key, (label, emoji) in SIGNUP_STATUSES.items():
+        assert label and emoji, key
+
+
+def test_statuses_from_the_live_fixtures_are_all_known():
+    acts = parse_myteams(_load("playerteam_emil"), today=date(2026, 8, 14))
+    acts += parse_myteams(_load("playerteam_ida"), today=date(2026, 8, 14))
+    keys = {normalize_signup_status(a.signup_status) for a in acts}
+    assert keys <= set(SIGNUP_STATUSES)
+    assert "andet" not in keys, "en rigtig status blev ikke genkendt"

@@ -48,5 +48,18 @@
         "name": "Activities"
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Kampklar settings",
+        "description": "Choose what the calendar should contain. Sensors are unaffected — they always show everything.",
+        "data": {
+          "calendar_statuses": "Show activities with these sign-up statuses",
+          "calendar_types": "Only show these activity types (empty = all)",
+          "calendar_prefix": "Show status in the event title"
+        }
+      }
+    }
   }
 }

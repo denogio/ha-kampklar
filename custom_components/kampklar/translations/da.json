@@ -48,5 +48,18 @@
         "name": "Aktiviteter"
       }
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Kampklar-indstillinger",
+        "description": "Vælg hvad kalenderen skal indeholde. Sensorerne påvirkes ikke — de viser altid alt.",
+        "data": {
+          "calendar_statuses": "Vis aktiviteter med disse tilmeldingsstatusser",
+          "calendar_types": "Vis kun disse aktivitetstyper (tom = alle)",
+          "calendar_prefix": "Vis status i begivenhedens titel"
+        }
+      }
+    }
   }
 }

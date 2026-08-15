@@ -97,7 +97,8 @@ views:
           _Ingen kommende aktiviteter_
           {% else %}
           {% for a in acts %}
-          **{{ a.title }}** {% if a.type %}· _{{ a.type }}_{% endif %}
+          {% set icon = {'tilmeldt':'✅','udtaget_bekraeftet':'⭐','udtaget':'📋','udtaget_ikke_bekraeftet':'⏳','til_raadighed':'🟠','ikke_svaret':'❓','frameldt':'❌'}.get(a.signup_status_key,'▫️') %}
+          {{ icon }} **{{ a.title }}** {% if a.type %}· _{{ a.type }}_{% endif %}
           🗓️ {{ a.weekday or '' }} {{ a.date }}{% if a.time %} · kl. {{ a.time }}{% endif %}
           {% if a.location %}📍 {{ a.location }}{% endif %}
           {% if a.meeting_time %}⏰ Mødetid {{ a.meeting_time }}{% endif %}
