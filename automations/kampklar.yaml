@@ -4,7 +4,8 @@
 # (forudsætter at du har `automation kampklar: !include_dir_merge_list automations/`
 #  eller tilsvarende i configuration.yaml.)
 #
-# Notify-service: notify.mobile_app_asus_ai2202
+# Notify-service: ret notify.mobile_app_min_telefon til din egen mobil-app-service
+# (Developer Tools → Actions → søg "notify.mobile_app").
 #
 # Notifikationer åbner Kampklar-dashboardet ved tryk via `clickAction`.
 # Ret stien hvis dit dashboard ligger et andet sted (se URL'en i browseren
@@ -40,7 +41,7 @@
     - repeat:
         for_each: "{{ new_msgs }}"
         sequence:
-          - service: notify.mobile_app_asus_ai2202
+          - service: notify.mobile_app_min_telefon
             data:
               title: "DBU: {{ repeat.item.subject }}"
               message: "{{ repeat.item.sender }}: {{ repeat.item.preview }}"
@@ -51,34 +52,49 @@
 
 # ───────────────────────────────────────────────────────────────
 # 2) Ny aktivitet planlagt → push
+#
+# Lytter på sensor.kampklar_boern, der har ét opslag pr. barn. Dermed dækker
+# den ét såvel som fem børn — der er ikke noget at rette når der kommer et
+# barn til. Vi sammenligner antal kommende aktiviteter pr. barn og siger til
+# når tallet stiger.
 # ───────────────────────────────────────────────────────────────
 - id: kampklar_ny_aktivitet
   alias: Kampklar — ny aktivitet planlagt
   mode: queued
   trigger:
     - platform: state
-      entity_id: sensor.kampklar_josva_kommende_aktiviteter
-      attribute: activities
+      entity_id: sensor.kampklar_boern
+      attribute: children
   condition:
     - condition: template
       value_template: >
         {{ trigger.from_state is not none
            and trigger.from_state.state not in ['unknown','unavailable']
-           and trigger.from_state.attributes.activities is defined }}
+           and trigger.from_state.attributes.children is defined }}
   action:
     - variables:
-        old_ids: "{{ trigger.from_state.attributes.activities | map(attribute='id') | list }}"
-        new_acts: >
-          {{ trigger.to_state.attributes.activities
-             | rejectattr('id','in', old_ids) | list }}
+        before: >
+          {% set ns = namespace(map={}) %}
+          {% for c in trigger.from_state.attributes.children %}
+            {% set ns.map = dict(ns.map, **{c.key: c.upcoming_count}) %}
+          {% endfor %}
+          {{ ns.map }}
+        changed: >
+          {% set ns = namespace(items=[]) %}
+          {% for c in trigger.to_state.attributes.children %}
+            {% if c.key not in before or c.upcoming_count > before[c.key] %}
+              {% set ns.items = ns.items + [c] %}
+            {% endif %}
+          {% endfor %}
+          {{ ns.items }}
     - condition: template
-      value_template: "{{ new_acts | length > 0 }}"
-    - service: notify.mobile_app_asus_ai2202
+      value_template: "{{ changed | length > 0 }}"
+    - service: notify.mobile_app_min_telefon
       data:
-        title: "DBU: {{ new_acts|length }} ny(e) aktivitet(er) for Josva"
+        title: "DBU: nye aktiviteter"
         message: >-
-          {% for a in new_acts %}
-          • {{ a.title }} — {{ a.weekday or '' }} {{ a.date }}{% if a.time %} kl. {{ a.time }}{% endif %}{% if a.location %} · {{ a.location }}{% endif %}
+          {% for c in changed %}
+          • {{ c.short_name }}: {{ c.upcoming_count }} kommende{% if c.next_activity %} — næste {{ c.next_activity.date }}{% if c.next_activity.time %} kl. {{ c.next_activity.time }}{% endif %}{% endif %}
           {% endfor %}
         data:
           tag: kampklar-new-activity
@@ -87,6 +103,10 @@
 
 # ───────────────────────────────────────────────────────────────
 # 3) Påmindelse 2 timer før aktivitet
+#
+# Kalender-triggeren tager én entitet ad gangen, så her skal hvert barns
+# kalender listes som sin egen trigger. Navnene står i attributten
+# entity_ids.calendar på sensor.kampklar_boern.
 # ───────────────────────────────────────────────────────────────
 - id: kampklar_paamindelse_2t
   alias: Kampklar — 2 timer før aktivitet
@@ -94,10 +114,14 @@
   trigger:
     - platform: calendar
       event: start
-      entity_id: calendar.kampklar_josva_aktiviteter
+      entity_id: calendar.kampklar_emil_aktiviteter
       offset: "-2:00:00"
+    # - platform: calendar
+    #   event: start
+    #   entity_id: calendar.kampklar_<næste barn>_aktiviteter
+    #   offset: "-2:00:00"
   action:
-    - service: notify.mobile_app_asus_ai2202
+    - service: notify.mobile_app_min_telefon
       data:
         title: "Om 2 timer: {{ trigger.calendar_event.summary }}"
         message: >-
@@ -122,17 +146,17 @@
       at: "18:00:00"
   condition:
     - condition: numeric_state
-      entity_id: sensor.kampklar_josva_mangler_tilmelding
+      entity_id: sensor.kampklar_mangler_tilmelding
       above: 0
   action:
     - variables:
-        acts: "{{ state_attr('sensor.kampklar_josva_mangler_tilmelding','activities') or [] }}"
-    - service: notify.mobile_app_asus_ai2202
+        acts: "{{ state_attr('sensor.kampklar_mangler_tilmelding','activities') or [] }}"
+    - service: notify.mobile_app_min_telefon
       data:
         title: "DBU: {{ acts|length }} aktivitet(er) mangler svar"
         message: >-
           {% for a in acts[:5] %}
-          • {{ a.title }} ({{ a.date }}{% if a.time %} kl. {{ a.time }}{% endif %})
+          • {{ a.child }}: {{ a.title }} ({{ a.date }}{% if a.time %} kl. {{ a.time }}{% endif %})
           {% endfor %}
         data:
           tag: kampklar-pending

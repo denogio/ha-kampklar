@@ -18,5 +18,35 @@
     "abort": {
       "already_configured": "This DBU user is already configured."
     }
+  },
+  "entity": {
+    "sensor": {
+      "recent_messages": {
+        "name": "Messages"
+      },
+      "children": {
+        "name": "Children"
+      },
+      "next_activity_all": {
+        "name": "Next activity"
+      },
+      "pending_signups_all": {
+        "name": "Missing sign-up"
+      },
+      "next_activity": {
+        "name": "Next activity"
+      },
+      "upcoming_activities": {
+        "name": "Upcoming activities"
+      },
+      "pending_signups": {
+        "name": "Missing sign-up"
+      }
+    },
+    "calendar": {
+      "activities": {
+        "name": "Activities"
+      }
+    }
   }
 }

@@ -18,5 +18,35 @@
     "abort": {
       "already_configured": "Denne DBU-bruger er allerede konfigureret."
     }
+  },
+  "entity": {
+    "sensor": {
+      "recent_messages": {
+        "name": "Beskeder"
+      },
+      "children": {
+        "name": "Børn"
+      },
+      "next_activity_all": {
+        "name": "Næste aktivitet"
+      },
+      "pending_signups_all": {
+        "name": "Mangler tilmelding"
+      },
+      "next_activity": {
+        "name": "Næste aktivitet"
+      },
+      "upcoming_activities": {
+        "name": "Kommende aktiviteter"
+      },
+      "pending_signups": {
+        "name": "Mangler tilmelding"
+      }
+    },
+    "calendar": {
+      "activities": {
+        "name": "Aktiviteter"
+      }
+    }
   }
 }

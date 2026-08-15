@@ -6,7 +6,7 @@ from datetime import datetime, time, timedelta
 
 from homeassistant.components.calendar import CalendarEntity, CalendarEvent
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
@@ -20,10 +20,21 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: KampklarCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities = [
-        KampklarCalendar(coordinator, entry, child) for child in coordinator.data.children
-    ]
-    async_add_entities(entities)
+    known: set[str] = set()
+
+    @callback
+    def _add_new_children() -> None:
+        """Nye børn skal have en kalender uden at HA skal genstartes."""
+        new = [c for c in coordinator.data.children if c.key not in known]
+        if not new:
+            return
+        known.update(c.key for c in new)
+        async_add_entities(
+            [KampklarCalendar(coordinator, entry, child) for child in new]
+        )
+
+    entry.async_on_unload(coordinator.async_add_listener(_add_new_children))
+    _add_new_children()
 
 
 def _activity_to_event(activity: TeamActivity) -> CalendarEvent | None:
@@ -70,6 +81,7 @@ def _activity_to_event(activity: TeamActivity) -> CalendarEvent | None:
 
 class KampklarCalendar(CoordinatorEntity[KampklarCoordinator], CalendarEntity):
     _attr_has_entity_name = True
+    _attr_translation_key = "activities"
     _attr_name = "Aktiviteter"
 
     def __init__(

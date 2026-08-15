@@ -18,11 +18,13 @@ from .parsers import (
     InboxMessage,
     MessageDetails,
     TeamActivity,
+    TeamContext,
     discover_children,
     parse_dashboard,
     parse_inbox,
     parse_message_details,
     parse_myteams,
+    parse_myteams_context,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -128,11 +130,22 @@ class DbuClient:
     async def fetch_myteams(
         self, team_id: int | None = None, person_id: int | None = None
     ) -> list[TeamActivity]:
+        activities, _ = await self.fetch_myteams_page(team_id, person_id)
+        return activities
+
+    async def fetch_myteams_page(
+        self, team_id: int | None = None, person_id: int | None = None
+    ) -> tuple[list[TeamActivity], TeamContext]:
+        """Hent KampKlar-siden for ét barn/hold — aktiviteter *og* hvem siden viser.
+
+        Konteksten bruges til at verificere at vi rent faktisk fik det barn vi
+        bad om (og til at få barnets navn selvom det ikke står på forsiden).
+        """
         url = f"{MIT}/MyTeam/MyTeams.aspx"
         if team_id is not None and person_id is not None:
             url = f"{url}?teamid={team_id}&contactforpersonid={person_id}"
         html = await self._get_html(url)
-        return parse_myteams(html)
+        return parse_myteams(html), parse_myteams_context(html)
 
     async def fetch_children(self) -> list[Child]:
         events = await self.fetch_dashboard()

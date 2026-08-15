@@ -3,29 +3,37 @@
 # Brug: Settings → Dashboards → "Add Dashboard" → "New dashboard from scratch"
 # → tre prikker → "Raw configuration editor" → indsæt indholdet herunder.
 #
-# Forventede entity-IDs (baseret på fornavn fra mit.dbu.dk's "Kontaktperson"):
-#   sensor.kampklar_beskeder
-#   sensor.kampklar_josva_naeste_aktivitet
-#   sensor.kampklar_josva_kommende_aktiviteter
-#   sensor.kampklar_josva_mangler_tilmelding
-#   calendar.kampklar_josva_aktiviteter
+# Dashboardet er navne-uafhængigt: alt hentes fra sensor.kampklar_boern, som
+# indeholder ét opslag pr. barn inkl. barnets egne entity-id'er. Får du et
+# barn mere tilknyttet din DBU-konto, dukker det op af sig selv — der er
+# ingenting at rette her.
 #
-# For flere børn: dupliker view-sektionen og udskift "josva" med næste navn.
+# Konto-sensorer (dækker alle børn):
+#   sensor.kampklar_boern
+#   sensor.kampklar_naeste_aktivitet
+#   sensor.kampklar_mangler_tilmelding
+#   sensor.kampklar_beskeder
+#
+# Pr. barn (bruges automatisk via opslag i sensor.kampklar_boern):
+#   sensor.kampklar_<navn>_naeste_aktivitet
+#   sensor.kampklar_<navn>_kommende_aktiviteter
+#   sensor.kampklar_<navn>_mangler_tilmelding
+#   calendar.kampklar_<navn>_aktiviteter
 
 title: Kampklar
 views:
-  - title: Josva
+  - title: Kampklar
     icon: mdi:soccer
     cards:
-      # ---- Top-række: hurtige tal ----
+      # ---- Top-række: hurtige tal for hele familien ----
       - type: horizontal-stack
         cards:
           - type: entity
-            entity: sensor.kampklar_josva_naeste_aktivitet
+            entity: sensor.kampklar_naeste_aktivitet
             name: Næste aktivitet
             icon: mdi:soccer-field
           - type: entity
-            entity: sensor.kampklar_josva_mangler_tilmelding
+            entity: sensor.kampklar_mangler_tilmelding
             name: Mangler svar
             icon: mdi:account-question
           - type: entity
@@ -33,42 +41,58 @@ views:
             name: Beskeder
             icon: mdi:email
 
-      # ---- Næste aktivitet i detalje ----
+      # ---- Ét kort pr. barn: næste aktivitet ----
       - type: markdown
-        title: Næste aktivitet
+        title: Børn
         content: |
-          {% set s = states('sensor.kampklar_josva_naeste_aktivitet') %}
-          {% if s in ['unknown','unavailable','none', None] %}
-          _Ingen kommende aktiviteter_
+          {% set children = state_attr('sensor.kampklar_boern','children') or [] %}
+          {% if children | length == 0 %}
+          _Ingen børn fundet på DBU-kontoen._
           {% else %}
-          ### {{ state_attr('sensor.kampklar_josva_naeste_aktivitet','title') }}
-          🗓️ {{ as_timestamp(s) | timestamp_custom('%A %d-%m-%Y kl. %H:%M') }}
-          {% if state_attr('sensor.kampklar_josva_naeste_aktivitet','location') %}
-          📍 {{ state_attr('sensor.kampklar_josva_naeste_aktivitet','location') }}
-          {% endif %}
-          {% if state_attr('sensor.kampklar_josva_naeste_aktivitet','type') %}
-          🏷️ {{ state_attr('sensor.kampklar_josva_naeste_aktivitet','type') }}
-          {% endif %}
-          {% if state_attr('sensor.kampklar_josva_naeste_aktivitet','signup_status') %}
-          ✅ Status: **{{ state_attr('sensor.kampklar_josva_naeste_aktivitet','signup_status') }}**
-          {% endif %}
-          _{{ state_attr('sensor.kampklar_josva_naeste_aktivitet','team') }}_
+          {% for c in children %}
+          ### {{ c.short_name }}
+          _{{ c.team }}{% if c.club %} · {{ c.club }}{% endif %}_
+
+          {% if c.next_activity %}
+          ⚽ **{{ c.next_activity.title }}**
+          🗓️ {{ c.next_activity.weekday or '' }} {{ c.next_activity.date }}{% if c.next_activity.time %} · kl. {{ c.next_activity.time }}{% endif %}
+          {% if c.next_activity.location %}📍 {{ c.next_activity.location }}{% endif %}
+          {% if c.next_activity.signup_status %}✅ Status: **{{ c.next_activity.signup_status }}**{% endif %}
+          {% else %}
+          _Ingen kommende aktiviteter_
           {% endif %}
 
-      # ---- Kalender (NB: state=off er normalt; den viser kun "on" når en
-      # begivenhed kører lige nu. Listen er i kortet nedenfor.)
-      - type: calendar
-        entities:
-          - calendar.kampklar_josva_aktiviteter
-        initial_view: listWeek
-        title: Kalender
+          {{ c.upcoming_count }} kommende · {{ c.pending_count }} mangler svar
 
-      # ---- Alle kommende aktiviteter ----
+          ---
+          {% endfor %}
+          {% endif %}
+
+      # ---- Manglende tilmelding på tværs af alle børn ----
+      - type: markdown
+        title: Mangler tilmelding
+        content: |
+          {% set acts = state_attr('sensor.kampklar_mangler_tilmelding','activities') or [] %}
+          {% if acts | length == 0 %}
+          _Alt er besvaret_ ✅
+          {% else %}
+          {% for a in acts %}
+          - **{{ a.child }}** — {{ a.title }} · {{ a.date }} {{ a.time or '' }}
+            {%- if a.location %} · {{ a.location }}{% endif %}
+          {% endfor %}
+          {% endif %}
+
+      # ---- Alle kommende aktiviteter, grupperet pr. barn ----
+      # Listerne hentes fra hvert barns egen sensor via de entity-id'er
+      # sensor.kampklar_boern oplyser — så virker det uanset antal børn.
       - type: markdown
         title: Kommende aktiviteter
         content: |
-          {% set acts = state_attr('sensor.kampklar_josva_kommende_aktiviteter','activities') or [] %}
-          {% if acts|length == 0 %}
+          {% for c in state_attr('sensor.kampklar_boern','children') or [] %}
+          {% set eid = c.entity_ids.upcoming_activities %}
+          {% set acts = (state_attr(eid,'activities') if eid else []) or [] %}
+          ### {{ c.short_name }}
+          {% if acts | length == 0 %}
           _Ingen kommende aktiviteter_
           {% else %}
           {% for a in acts %}
@@ -77,23 +101,23 @@ views:
           {% if a.location %}📍 {{ a.location }}{% endif %}
           {% if a.signup_status %}✅ **{{ a.signup_status }}**{% if a.signup_locked %} (lukket){% endif %}{% endif %}
 
-          ---
           {% endfor %}
           {% endif %}
 
-      # ---- Aktiviteter der mangler tilmelding ----
-      - type: markdown
-        title: Mangler tilmelding
-        content: |
-          {% set acts = state_attr('sensor.kampklar_josva_mangler_tilmelding','activities') or [] %}
-          {% if acts|length == 0 %}
-          _Alt er besvaret_ ✅
-          {% else %}
-          {% for a in acts %}
-          - **{{ a.title }}** — {{ a.date }} {{ a.time or '' }}
-            {%- if a.location %} · {{ a.location }}{% endif %}
+          ---
           {% endfor %}
-          {% endif %}
+
+      # ---- Kalender ----
+      # Kalender-kortet kan desværre ikke tage en dynamisk entity-liste, så her
+      # skal hvert barns kalender skrives ind én gang. Find navnene under
+      # Settings → Devices & Services → Entities → søg "kampklar" (eller se
+      # attributten entity_ids.calendar på sensor.kampklar_boern).
+      - type: calendar
+        entities:
+          - calendar.kampklar_emil_aktiviteter
+          # - calendar.kampklar_<næste barn>_aktiviteter
+        initial_view: listWeek
+        title: Kalender
 
       # ---- Seneste 10 beskeder med fuld body ----
       # Hver besked er en <details>-blok — klik på subject for at folde ud.

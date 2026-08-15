@@ -20,28 +20,66 @@ DK_MONTHS = {
 
 @dataclass
 class Child:
-    """Et barn/hold-tilknytning udledt fra dashboard events.
+    """Et barn/hold-tilknytning.
 
     contact_for_person_id er barnets person-ID i DBU's system.
-    Et barn kan i princippet være på flere hold (sjældent) — her giver vi
-    én Child pr. unik (person_id, team_id) kombination.
+    Et barn kan være på flere hold — her giver vi én Child pr. unik
+    (person_id, team_id) kombination.
     """
     person_id: int
     team_id: int
     club_id: str | None
-    team_name: str | None       # fx "U12 Drenge Snejbjerg (årgang 2014) 25/26"
-    name: str | None = None     # barnets navn fra "Kontaktperson:" på dashboard
+    team_name: str | None       # fx "U12 Drenge Vestby (årgang 2014) 25/26"
+    name: str | None = None     # barnets navn ("Kontaktperson for: ...")
+    club_name: str | None = None
+    # Unikt visningsnavn — sættes af assign_display_names() når hele listen
+    # af børn kendes, så to søskende ikke ender med samme entity-id.
+    display_name: str | None = None
 
     @property
     def key(self) -> str:
         return f"{self.person_id}_{self.team_id}"
 
     @property
-    def short_name(self) -> str:
-        """Kort, slug-venligt navn — fornavn hvis muligt, ellers person_id."""
+    def first_name(self) -> str:
         if self.name:
             return self.name.split(" ", 1)[0]
         return str(self.person_id)
+
+    @property
+    def short_name(self) -> str:
+        """Kort, slug-venligt navn — fornavn hvis muligt, ellers person_id."""
+        return self.display_name or self.first_name
+
+    def as_dict(self) -> dict:
+        """Serialisering til HA's storage (så børn overlever genstart)."""
+        return {
+            "person_id": self.person_id,
+            "team_id": self.team_id,
+            "club_id": self.club_id,
+            "team_name": self.team_name,
+            "name": self.name,
+            "club_name": self.club_name,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Child":
+        return cls(
+            person_id=int(data["person_id"]),
+            team_id=int(data["team_id"]),
+            club_id=data.get("club_id"),
+            team_name=data.get("team_name"),
+            name=data.get("name"),
+            club_name=data.get("club_name"),
+        )
+
+
+@dataclass
+class TeamContext:
+    """Hvem/hvilket hold en MyTeams.aspx-side rent faktisk viser."""
+    child_name: str | None
+    team_name: str | None
+    club_name: str | None
 
 
 @dataclass
@@ -262,6 +300,11 @@ def discover_children(events: list[DashboardEvent]) -> list[Child]:
 
     Grupperer efter (contact_for_person_id, team_id) — første event vinder
     for team_name/club_id. Events uden person_id+team_id ignoreres.
+
+    BEMÆRK: forsiden viser kun de førstkommende ~4 begivenheder på tværs af
+    alle børn. Har ét barn fire aktiviteter før det andet barns første, er
+    barn nr. 2 helt fraværende her. Derfor er det her kun en *opdagelses*-
+    kilde — den samlede liste vedligeholdes via merge_children().
     """
     seen: dict[tuple[int, int], Child] = {}
     for e in events:
@@ -278,6 +321,74 @@ def discover_children(events: list[DashboardEvent]) -> list[Child]:
             name=e.contact_person,
         )
     return list(seen.values())
+
+
+def merge_children(known: list[Child], discovered: list[Child]) -> list[Child]:
+    """Flet gemte børn sammen med dem forsiden lige nu viser.
+
+    Nyopdagede kommer først — hvis mit.dbu.dk ignorerer vores query-parametre
+    og falder tilbage til "standard"-holdet, er det de *bekræftede* børn der
+    skal vinde dedupliceringen i coordinatoren.
+    """
+    out: list[Child] = []
+    seen: set[str] = set()
+    for child in [*discovered, *known]:
+        if child.key in seen:
+            continue
+        seen.add(child.key)
+        out.append(child)
+    return out
+
+
+def assign_display_names(children: list[Child]) -> None:
+    """Giv hvert barn et unikt, kort visningsnavn (bruges i entity-id'er).
+
+    Normalt bare fornavnet. Er der sammenfald (søskende med samme fornavn,
+    eller ét barn på to hold) tilføjes holdets første ord — og i sidste ende
+    person/hold-id, så vi aldrig får to devices med samme navn.
+    """
+    by_first: dict[str, list[Child]] = {}
+    for child in children:
+        by_first.setdefault(child.first_name.lower(), []).append(child)
+
+    for group in by_first.values():
+        if len(group) == 1:
+            group[0].display_name = group[0].first_name
+            continue
+        used: set[str] = set()
+        for child in group:
+            suffix = (child.team_name or "").split(" ", 1)[0].strip()
+            candidate = f"{child.first_name} {suffix}".strip() if suffix else ""
+            if not candidate or candidate.lower() in used:
+                candidate = f"{child.first_name} {child.team_id}"
+            used.add(candidate.lower())
+            child.display_name = candidate
+
+
+def parse_myteams_context(html: str) -> TeamContext:
+    """Hvem viser denne MyTeams.aspx-side?
+
+    Siden fortæller det selv i toppen — klubnavn, hold og "Kontaktperson for:
+    <barnets navn>". Det er vores eneste måde at verificere at DBU faktisk
+    gav os det barn vi bad om, og det virker uanset om barnet har aktiviteter.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+
+    team_el = soup.find(id="cphMain_lblTeam")
+    club_el = soup.find(id="cphMain_lblClubName")
+    role_el = soup.find(id="cphMain_lblRole")
+
+    child_name = None
+    if role_el:
+        txt = role_el.get_text(" ", strip=True)
+        if ":" in txt:
+            child_name = txt.split(":", 1)[1].strip() or None
+
+    return TeamContext(
+        child_name=child_name,
+        team_name=team_el.get_text(strip=True) if team_el else None,
+        club_name=club_el.get_text(strip=True) if club_el else None,
+    )
 
 
 def _infer_year(month: int, today: date) -> int:
@@ -331,7 +442,8 @@ def parse_myteams(html: str, today: date | None = None) -> list[TeamActivity]:
         loc_el = div.find("span", id=re.compile(r"_lblMeetingDateTime_\d+$"))
         location = None
         if loc_el:
-            location = loc_el.get_text(strip=True).strip("()") or None
+            # Står som "(Bane 2 )" — af med parenteser og efterladt whitespace
+            location = loc_el.get_text(strip=True).strip("()").strip() or None
 
         status_el = div.find("span", id=re.compile(r"_lblSignUpStatus_\d+$"))
         signup_status = status_el.get_text(strip=True) if status_el else None
@@ -385,10 +497,17 @@ if __name__ == "__main__":
     import sys
     from pathlib import Path
 
-    dumps = Path(__file__).parent / "dumps"
-    name = sys.argv[1] if len(sys.argv) > 1 else "default"
-    fn = {"default": parse_dashboard, "inbox": parse_inbox, "myteams": parse_myteams}[name]
-    html = (dumps / f"{name}.html").read_text()
+    # Kør mod de anonymiserede fixtures — eller mod dine egne dumps fra
+    # poc_login.py, som ligger i scripts/dumps/ (gitignored).
+    base = Path(__file__).parent / "fixtures"
+    name = sys.argv[1] if len(sys.argv) > 1 else "dashboard"
+    fn = {
+        "dashboard": parse_dashboard,
+        "inbox": parse_inbox,
+        "myteams_emil": parse_myteams,
+        "myteams_ida": parse_myteams,
+    }[name]
+    html = (base / f"{name}.html").read_text()
     result = fn(html)
 
     def default(o):

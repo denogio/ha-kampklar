@@ -1,7 +1,7 @@
 {
   "domain": "kampklar",
   "name": "Kampklar (mit.dbu.dk)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "documentation": "https://github.com/denogio/ha-dbu-kampklar",
   "issue_tracker": "https://github.com/denogio/ha-dbu-kampklar/issues",
   "codeowners": ["@denogio"],
