@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from urllib.parse import parse_qs, urlparse
 
-from bs4 import BeautifulSoup, Tag
+from bs4 import BeautifulSoup
 
 DK_MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "maj": 5, "jun": 6,
@@ -20,66 +20,110 @@ DK_MONTHS = {
 
 @dataclass
 class Child:
-    """Et barn/hold-tilknytning.
+    """Et barn/hold-tilknytning — én pr. række i KampKlar-vælgeren.
 
-    contact_for_person_id er barnets person-ID i DBU's system.
-    Et barn kan være på flere hold — her giver vi én Child pr. unik
-    (person_id, team_id) kombination.
+    Hold-ID'et er det stabile holdepunkt: vælger-siden oplyser hverken
+    person-ID eller hold-ID, så team_id læses af holdsiden og person_id
+    hentes (når det er muligt) fra forsidens links.
+
+    `stored_key` er den nøgle barnet fik første gang vi så det. Den gemmes og
+    genbruges for evigt, så entiteternes unique_id aldrig skifter — heller
+    ikke hvis vi senere lærer barnets person_id at kende.
     """
-    person_id: int
-    team_id: int
-    club_id: str | None
-    team_name: str | None       # fx "U12 Drenge Vestby (årgang 2014) 25/26"
-    name: str | None = None     # barnets navn ("Kontaktperson for: ...")
+    team_id: int | None
+    team_name: str | None = None    # fx "U12 Drenge Vestby (årgang 2014) 25/26"
+    name: str | None = None         # barnets navn ("Kontaktperson for: ...")
     club_name: str | None = None
+    club_id: str | None = None
+    person_id: int | None = None
+    stored_key: str | None = None
+    # Postback-målet der vælger dette hold. Kun gyldigt i den aktuelle
+    # opdatering — gemmes ikke.
+    postback_target: str | None = None
     # Unikt visningsnavn — sættes af assign_display_names() når hele listen
     # af børn kendes, så to søskende ikke ender med samme entity-id.
     display_name: str | None = None
 
     @property
     def key(self) -> str:
-        return f"{self.person_id}_{self.team_id}"
+        """Stabil identifikator — bliver til entiteternes unique_id.
+
+        Hold-ID'et er det eneste der er både unikt og stabilt hen over
+        sæsoner: DBU genbruger holdet og skifter bare navnet. Kender vi
+        undtagelsesvis ikke holdet, falder vi tilbage på barnets navn.
+        """
+        if self.stored_key:
+            return self.stored_key
+        if self.team_id is not None:
+            return f"t{self.team_id}"
+        if self.name:
+            return "n" + re.sub(r"\W+", "_", self.name.strip().lower())
+        return "ukendt"
 
     @property
     def first_name(self) -> str:
         if self.name:
             return self.name.split(" ", 1)[0]
-        return str(self.person_id)
+        if self.person_id:
+            return str(self.person_id)
+        return f"hold {self.team_id}" if self.team_id else "barn"
 
     @property
     def short_name(self) -> str:
-        """Kort, slug-venligt navn — fornavn hvis muligt, ellers person_id."""
+        """Kort, slug-venligt navn — fornavn hvis muligt, ellers holdet."""
         return self.display_name or self.first_name
 
     def as_dict(self) -> dict:
-        """Serialisering til HA's storage (så børn overlever genstart)."""
+        """Serialisering til HA's storage (så nøgler overlever genstart)."""
         return {
-            "person_id": self.person_id,
+            "key": self.key,
             "team_id": self.team_id,
-            "club_id": self.club_id,
             "team_name": self.team_name,
             "name": self.name,
             "club_name": self.club_name,
+            "club_id": self.club_id,
+            "person_id": self.person_id,
         }
 
     @classmethod
     def from_dict(cls, data: dict) -> "Child":
+        team_id = data.get("team_id")
+        person_id = data.get("person_id")
         return cls(
-            person_id=int(data["person_id"]),
-            team_id=int(data["team_id"]),
-            club_id=data.get("club_id"),
+            team_id=int(team_id) if team_id is not None else None,
             team_name=data.get("team_name"),
             name=data.get("name"),
             club_name=data.get("club_name"),
+            club_id=data.get("club_id"),
+            person_id=int(person_id) if person_id is not None else None,
+            # Ældre versioner gemte ingen nøgle. Den udledes så på ny af
+            # hold-ID'et — det matcher de unique_id'er __init__.py migrerer
+            # de gamle entiteter over til.
+            stored_key=data.get("key"),
         )
 
 
 @dataclass
 class TeamContext:
-    """Hvem/hvilket hold en MyTeams.aspx-side rent faktisk viser."""
+    """Hvem/hvilket hold en holdside (PlayerTeam.aspx) viser."""
     child_name: str | None
     team_name: str | None
     club_name: str | None
+    team_id: int | None = None
+    club_id: str | None = None
+
+    @property
+    def is_team_page(self) -> bool:
+        return self.team_name is not None
+
+
+@dataclass
+class ChooserRow:
+    """Én række i KampKlar-vælgeren ("Som forælder/kontaktperson")."""
+    postback_target: str
+    team_name: str | None
+    club_name: str | None
+    child_name: str | None
 
 
 @dataclass
@@ -131,6 +175,8 @@ class TeamActivity:
     date: date | None
     counts: dict[str, int] = field(default_factory=dict)
     url: str | None = None
+    meeting_time: str | None = None   # "Mødetid: 09:00" ved kampe
+    pool: str | None = None           # række/pulje ved turneringskampe
 
 
 def _qs_int(url: str, key: str) -> int | None:
@@ -323,23 +369,6 @@ def discover_children(events: list[DashboardEvent]) -> list[Child]:
     return list(seen.values())
 
 
-def merge_children(known: list[Child], discovered: list[Child]) -> list[Child]:
-    """Flet gemte børn sammen med dem forsiden lige nu viser.
-
-    Nyopdagede kommer først — hvis mit.dbu.dk ignorerer vores query-parametre
-    og falder tilbage til "standard"-holdet, er det de *bekræftede* børn der
-    skal vinde dedupliceringen i coordinatoren.
-    """
-    out: list[Child] = []
-    seen: set[str] = set()
-    for child in [*discovered, *known]:
-        if child.key in seen:
-            continue
-        seen.add(child.key)
-        out.append(child)
-    return out
-
-
 def assign_display_names(children: list[Child]) -> None:
     """Giv hvert barn et unikt, kort visningsnavn (bruges i entity-id'er).
 
@@ -366,29 +395,93 @@ def assign_display_names(children: list[Child]) -> None:
 
 
 def parse_myteams_context(html: str) -> TeamContext:
-    """Hvem viser denne MyTeams.aspx-side?
+    """Hvem viser denne holdside (PlayerTeam.aspx)?
 
     Siden fortæller det selv i toppen — klubnavn, hold og "Kontaktperson for:
-    <barnets navn>". Det er vores eneste måde at verificere at DBU faktisk
-    gav os det barn vi bad om, og det virker uanset om barnet har aktiviteter.
+    <barnets navn>". Hold- og klub-ID hentes fra iCal-linket
+    (TeamActivities.ashx?...&clubkey=<uuid>&teamid=<n>), som er det eneste
+    sted de optræder nu.
+
+    Er der intet holdnavn, er det ikke en holdside — så er det vælgeren.
+    ASP.NET skifter mellem "cphMain_" og "ctl00_cphMain_" som id-præfiks
+    afhængigt af siden, så vi matcher på endelsen.
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    team_el = soup.find(id="cphMain_lblTeam")
-    club_el = soup.find(id="cphMain_lblClubName")
-    role_el = soup.find(id="cphMain_lblRole")
+    def _by_suffix(suffix: str) -> str | None:
+        el = soup.find(id=re.compile(re.escape(suffix) + r"$"))
+        return el.get_text(" ", strip=True) if el else None
 
     child_name = None
-    if role_el:
-        txt = role_el.get_text(" ", strip=True)
-        if ":" in txt:
-            child_name = txt.split(":", 1)[1].strip() or None
+    role = _by_suffix("lblRole")
+    if role and ":" in role:
+        child_name = role.split(":", 1)[1].strip() or None
+
+    team_id = club_id = None
+    m = re.search(r"TeamActivities\.ashx\?[^\"']*", html)
+    if m:
+        team_id = _qs_int(m.group(0), "teamid")
+        club_id = _qs_str(m.group(0), "clubkey")
 
     return TeamContext(
         child_name=child_name,
-        team_name=team_el.get_text(strip=True) if team_el else None,
-        club_name=club_el.get_text(strip=True) if club_el else None,
+        team_name=_by_suffix("lblTeam"),
+        club_name=_by_suffix("lblClubName"),
+        team_id=team_id,
+        club_id=club_id,
     )
+
+
+def parse_myteams_chooser(html: str) -> list[ChooserRow]:
+    """Parse vælger-siden /MyTeam/MyTeams.aspx.
+
+    Har du flere børn, viser DBU en tabel ("Som forælder/kontaktperson") med
+    ét hold pr. række — den eneste komplette liste over dine børn der findes
+    på mit.dbu.dk. Holdet vælges med en ASP.NET-postback, og rækkens
+    __doPostBack-mål er nøglen til at hente holdsiden bagefter.
+
+    Med kun ét barn springer DBU vælgeren over og viser holdsiden direkte —
+    så giver den her en tom liste.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    grid = soup.find(id=re.compile(r"rgPlayerContact$"))
+    if grid is None:
+        return []
+
+    rows: list[ChooserRow] = []
+    for tr in grid.find_all("tr", class_=lambda c: c in ("rgRow", "rgAltRow")):
+        link = tr.find("a", href=re.compile(r"__doPostBack"))
+        if not link:
+            continue
+        m = re.search(r"__doPostBack\('([^']+)'", link.get("href", ""))
+        if not m:
+            continue
+        cells = [td.get_text(" ", strip=True) for td in tr.find_all("td")]
+        rows.append(
+            ChooserRow(
+                postback_target=m.group(1),
+                team_name=link.get_text(strip=True) or None,
+                # Kolonner: Holdnavn, Afdeling, Sportsgren, Køn, Klub,
+                # "Kontaktperson for". Vi tager de to sidste og lader resten
+                # ligge — holdsiden har alligevel de præcise værdier.
+                club_name=cells[-2] if len(cells) >= 2 else None,
+                child_name=cells[-1] if cells else None,
+            )
+        )
+    return rows
+
+
+def parse_aspnet_form(html: str) -> dict[str, str]:
+    """Træk ASP.NET's skjulte felter ud (__VIEWSTATE m.fl.).
+
+    De skal med i postbacken, ellers afviser serveren den.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    return {
+        el["name"]: el.get("value") or ""
+        for el in soup.find_all("input", type="hidden")
+        if el.get("name")
+    }
 
 
 def _infer_year(month: int, today: date) -> int:
@@ -439,11 +532,19 @@ def parse_myteams(html: str, today: date | None = None) -> list[TeamActivity]:
             else:
                 weekday = txt
 
+        # Samme felt bruges til to ting: sted ved træning ("(Bane 2 )") og
+        # mødetid ved kampe ("Mødetid: 09:00").
         loc_el = div.find("span", id=re.compile(r"_lblMeetingDateTime_\d+$"))
-        location = None
+        location = meeting_time = None
         if loc_el:
-            # Står som "(Bane 2 )" — af med parenteser og efterladt whitespace
-            location = loc_el.get_text(strip=True).strip("()").strip() or None
+            txt = loc_el.get_text(" ", strip=True).strip("()").strip()
+            if txt.lower().startswith("mødetid"):
+                meeting_time = txt.split(":", 1)[1].strip() if ":" in txt else txt
+            else:
+                location = txt or None
+
+        pool_el = div.find("span", id=re.compile(r"_lblRowAndPool_\d+$"))
+        pool = pool_el.get_text(" ", strip=True) or None if pool_el else None
 
         status_el = div.find("span", id=re.compile(r"_lblSignUpStatus_\d+$"))
         signup_status = status_el.get_text(strip=True) if status_el else None
@@ -458,10 +559,7 @@ def parse_myteams(html: str, today: date | None = None) -> list[TeamActivity]:
         for sp in div.find_all("span", class_="status"):
             classes = sp.get("class", [])
             title_attr = sp.get("title", "").strip().lower()
-            try:
-                n = int(sp.get_text(strip=True))
-            except ValueError:
-                continue
+            text = sp.get_text(strip=True)
             key = None
             if "green" in classes or "tilmeldt" == title_attr:
                 key = "tilmeldt"
@@ -471,8 +569,24 @@ def parse_myteams(html: str, today: date | None = None) -> list[TeamActivity]:
                 key = "ikke_svaret"
             elif "blue" in classes:
                 key = "traenere"
-            if key:
-                counts[key] = n
+            elif "orange" in classes:
+                key = "til_raadighed"
+            if not key:
+                continue
+            if "/" in text:
+                # Ved kampe står de udtagne som "10/0" =
+                # bekræftet/ikke bekræftet.
+                bekraeftet, _, ikke = text.partition("/")
+                try:
+                    counts["udtaget"] = int(bekraeftet)
+                    counts["udtaget_ikke_bekraeftet"] = int(ikke)
+                except ValueError:
+                    pass
+                continue
+            try:
+                counts[key] = int(text)
+            except ValueError:
+                continue
 
         out.append(
             TeamActivity(
@@ -487,6 +601,8 @@ def parse_myteams(html: str, today: date | None = None) -> list[TeamActivity]:
                 date=d,
                 counts=counts,
                 url=href,
+                meeting_time=meeting_time,
+                pool=pool,
             )
         )
     return out

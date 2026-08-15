@@ -19,18 +19,25 @@ Henter dine børns fodboldaktiviteter, kampe og beskeder fra
 
 ## Hvordan børn findes
 
-mit.dbu.dk har ingen "mine børn"-side. Forsiden viser kun de **førstkommende
-~4 begivenheder på tværs af alle børn** — har det ene barn fire aktiviteter
-før det andets første, står barn nr. 2 slet ikke der. Derfor:
+`mit.dbu.dk/MyTeam/MyTeams.aspx` er en **vælger**: har du flere børn, får du
+en tabel med ét hold pr. barn ("Som forælder/kontaktperson"). Har du kun ét,
+springer DBU vælgeren over og viser holdet direkte — det er derfor
+integrationen virkede fint indtil barn nr. 2 kom til.
 
-1. Forsiden bruges kun til at *opdage* nye børn.
-2. Alle børn vi har set før gemmes i Home Assistants storage
-   (`.storage/kampklar.children.<entry_id>`), så de ikke forsvinder igen.
-3. Hvert barn verificeres ved at hente dets KampKlar-side, som selv oplyser
-   klub, hold og "Kontaktperson for: *navn*". Det virker også når barnet ikke
-   har nogen aktiviteter lige nu.
-4. Er et barn ikke længere tilknyttet kontoen, holder DBU op med at vise dets
-   hold, og barnet falder ud af listen igen ved næste opdatering.
+Holdet vælges ikke med en URL, men med en ASP.NET-postback, der lander på
+`PlayerTeam.aspx`. Integrationen gør derfor:
+
+1. Henter vælgeren og læser alle rækker — det er den eneste komplette liste
+   over børn på mit.dbu.dk, og den viser også børn helt uden aktiviteter.
+2. Poster rækkens `__doPostBack`-mål for hvert barn og henter holdsiden, som
+   selv oplyser klub, hold, "Kontaktperson for: *navn*" og aktiviteterne.
+3. Bruger hold-ID'et (fra holdsidens iCal-link) som barnets faste nøgle, og
+   gemmer den i `.storage/kampklar.children.<entry_id>` så entiteternes
+   `unique_id` ligger fast — også når holdet skifter navn ved sæsonskifte.
+
+Forsiden bruges ikke til at finde børn: den viser kun de førstkommende fire
+begivenheder på tværs af alle børn, så med to børn falder det ene typisk helt
+ud.
 
 ## Installation
 
@@ -102,8 +109,8 @@ Hver 60 minutter. Tilrettes i [`custom_components/kampklar/const.py`](custom_com
 ## Fejlfinding
 
 **Et barn mangler.** Kig på attributten `children` på `sensor.kampklar_boern`.
-Er barnet ikke med, har integrationen hverken set det på forsiden eller gemt
-det tidligere — slå debug-log til og genindlæs integrationen:
+Er barnet ikke med, stod det heller ikke i KampKlar-vælgeren — slå debug-log
+til og genindlæs integrationen:
 
 ```yaml
 logger:
@@ -112,8 +119,12 @@ logger:
 ```
 
 **Et barn hænger ved efter det er meldt ud.** Det forsvinder af sig selv ved
-næste opdatering, når DBU holder op med at vise dets hold. Vil du rydde op med
+næste opdatering, når rækken er væk fra KampKlar-vælgeren. Vil du rydde op med
 det samme: slet enheden under **Settings → Devices & Services → Kampklar**.
+
+**Ingen børn overhovedet.** Loggen siger hvad siden indeholdt. Står der at
+KampKlar-siden hverken havde hold eller vælger, har DBU lagt siden om igen —
+åbn et issue.
 
 ## Begrænsninger
 
@@ -135,8 +146,15 @@ python -m venv .venv
 ```
 
 Testene kører mod anonymiserede fixtures i [`scripts/fixtures/`](scripts/fixtures/)
-— udklip af den rigtige markup med opdigtede navne, hold og id'er. `dashboard.html`
-viser med vilje kun ét barns aktiviteter, så to-børns-tilfældet er dækket.
+— udklip af den rigtige markup med opdigtede navne, hold og id'er:
+
+| Fixture | Side |
+|---|---|
+| `myteams_chooser.html` | KampKlar-vælgeren med to børn (`__VIEWSTATE` er en dummy — den rigtige indeholder persondata) |
+| `playerteam_emil.html`, `playerteam_ida.html` | Holdsiden efter postback, ét pr. barn |
+| `myteams_emil.html` | Holdsiden serveret direkte, som når kontoen kun har ét barn |
+| `dashboard.html` | Forsiden, hvor kun det travleste barn er med |
+| `inbox.html`, `message.html` | Beskedcenteret |
 
 Vil du hente friske sider fra din egen konto:
 

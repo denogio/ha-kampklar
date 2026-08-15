@@ -22,8 +22,6 @@ from .parsers import (
     InboxMessage,
     TeamActivity,
     assign_display_names,
-    discover_children,
-    merge_children,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -73,58 +71,57 @@ class KampklarCoordinator(DataUpdateCoordinator[KampklarData]):
         _LOG.debug("Indlæste %d kendte børn fra storage", len(children))
 
     async def _async_save_known_children(self, children: list[Child]) -> None:
+        if not children and self._known_children:
+            # Aldrig glemme børn på baggrund af en tom hentning — så mister vi
+            # de gemte nøgler, og alle entiteter ville skifte unique_id.
+            _LOG.warning("Fandt ingen børn denne gang — beholder de gemte")
+            return
         payload = {"children": [c.as_dict() for c in children]}
         if [c.as_dict() for c in self._known_children] == payload["children"]:
             return
         self._known_children = list(children)
         await self._store.async_save(payload)
 
+    def _assign_stable_key(self, child: Child) -> None:
+        """Giv barnet den nøgle det fik første gang vi så det.
+
+        Nøglen bliver til entiteternes unique_id, så den må aldrig skifte.
+        Normalt er den udledt af hold-ID'et og dermed allerede stabil — men
+        skifter DBU hold-ID (nyt hold, ny sæson), holder vi fast i den gamle
+        nøgle ved at genkende barnets navn.
+        """
+        for known in self._known_children:
+            if child.team_id is not None and known.team_id == child.team_id:
+                child.stored_key = known.key
+                child.person_id = child.person_id or known.person_id
+                return
+        for known in self._known_children:
+            if child.name and known.name == child.name:
+                child.stored_key = known.key
+                child.person_id = child.person_id or known.person_id
+                return
+
     async def _async_resolve_children(self) -> tuple[list[Child], dict[str, list[TeamActivity]]]:
         """Find alle børn og hent deres aktiviteter.
 
-        Forsiden viser kun de førstkommende ~4 begivenheder på tværs af alle
-        børn, så den alene kan ikke bruges som facitliste — med to børn falder
-        det ene typisk helt ud. I stedet flettes forsidens fund med de børn vi
-        har set før, og hvert kandidat-barn verificeres ved at hente dets
-        KampKlar-side: den fortæller selv hvilket barn og hold den viser.
+        Listen kommer fra KampKlar-vælgeren, som har én række pr. barn — også
+        børn uden aktiviteter. Forsiden bruges ikke: den viser kun de
+        førstkommende fire begivenheder på tværs af alle børn, og med to børn
+        falder det ene typisk helt ud.
         """
-        events = await self.client.fetch_dashboard()
-        discovered = discover_children(events)
-        candidates = merge_children(self._known_children, discovered)
+        pairs = await self.client.fetch_children_with_activities()
 
         children: list[Child] = []
         activities: dict[str, list[TeamActivity]] = {}
-        seen_identity: set[tuple[str | None, str | None]] = set()
-
-        for child in candidates:
-            acts, ctx = await self.client.fetch_myteams_page(
-                team_id=child.team_id, person_id=child.person_id
-            )
-            if ctx.team_name is None:
-                # Siden viste ikke noget hold — barnet er formentlig ikke
-                # tilknyttet kontoen længere.
-                _LOG.info(
-                    "Springer barn %s over: KampKlar-siden viste intet hold", child.key
-                )
-                continue
-
-            child.name = ctx.child_name or child.name
-            child.team_name = ctx.team_name or child.team_name
-            child.club_name = ctx.club_name or child.club_name
-
-            identity = (child.name, child.team_name)
-            if identity in seen_identity:
-                # mit.dbu.dk faldt tilbage til standardholdet i stedet for at
-                # respektere vores parametre — behold kun den første (bekræftede).
-                _LOG.info(
-                    "Springer barn %s over: siden viste %s / %s igen",
+        for child, acts in pairs:
+            self._assign_stable_key(child)
+            if child.key in activities:
+                _LOG.warning(
+                    "To børn fik samme nøgle (%s) — springer %s over",
                     child.key,
                     child.name,
-                    child.team_name,
                 )
                 continue
-            seen_identity.add(identity)
-
             children.append(child)
             activities[child.key] = acts
 

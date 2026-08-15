@@ -57,6 +57,7 @@ views:
           ⚽ **{{ c.next_activity.title }}**
           🗓️ {{ c.next_activity.weekday or '' }} {{ c.next_activity.date }}{% if c.next_activity.time %} · kl. {{ c.next_activity.time }}{% endif %}
           {% if c.next_activity.location %}📍 {{ c.next_activity.location }}{% endif %}
+          {% if c.next_activity.meeting_time %}⏰ Mødetid {{ c.next_activity.meeting_time }}{% endif %}
           {% if c.next_activity.signup_status %}✅ Status: **{{ c.next_activity.signup_status }}**{% endif %}
           {% else %}
           _Ingen kommende aktiviteter_
@@ -99,6 +100,7 @@ views:
           **{{ a.title }}** {% if a.type %}· _{{ a.type }}_{% endif %}
           🗓️ {{ a.weekday or '' }} {{ a.date }}{% if a.time %} · kl. {{ a.time }}{% endif %}
           {% if a.location %}📍 {{ a.location }}{% endif %}
+          {% if a.meeting_time %}⏰ Mødetid {{ a.meeting_time }}{% endif %}
           {% if a.signup_status %}✅ **{{ a.signup_status }}**{% if a.signup_locked %} (lukket){% endif %}{% endif %}
 
           {% endfor %}

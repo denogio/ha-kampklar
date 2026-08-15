@@ -14,16 +14,18 @@ from bs4 import BeautifulSoup
 
 from .parsers import (
     Child,
+    ChooserRow,
     DashboardEvent,
     InboxMessage,
     MessageDetails,
     TeamActivity,
     TeamContext,
-    discover_children,
+    parse_aspnet_form,
     parse_dashboard,
     parse_inbox,
     parse_message_details,
     parse_myteams,
+    parse_myteams_chooser,
     parse_myteams_context,
 )
 
@@ -32,10 +34,32 @@ _LOG = logging.getLogger(__name__)
 WWW = "https://www.dbu.dk"
 MIT = "https://mit.dbu.dk"
 
+MYTEAMS_URL = f"{MIT}/MyTeam/MyTeams.aspx"
+
 UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
+
+
+def _child_from_context(ctx: TeamContext) -> Child:
+    return Child(
+        team_id=ctx.team_id,
+        team_name=ctx.team_name,
+        name=ctx.child_name,
+        club_name=ctx.club_name,
+        club_id=ctx.club_id,
+    )
+
+
+def _child_from_row(row: ChooserRow) -> Child:
+    return Child(
+        team_id=None,
+        team_name=row.team_name,
+        name=row.child_name,
+        club_name=row.club_name,
+        postback_target=row.postback_target,
+    )
 
 
 class DbuAuthError(Exception):
@@ -127,39 +151,74 @@ class DbuClient:
         )
         return parse_message_details(html, message_id)
 
-    async def fetch_myteams(
-        self, team_id: int | None = None, person_id: int | None = None
-    ) -> list[TeamActivity]:
-        activities, _ = await self.fetch_myteams_page(team_id, person_id)
-        return activities
+    async def fetch_team_page(self, target: str, form: dict[str, str]) -> str:
+        """Vælg et hold i KampKlar-vælgeren via ASP.NET-postback.
 
-    async def fetch_myteams_page(
-        self, team_id: int | None = None, person_id: int | None = None
-    ) -> tuple[list[TeamActivity], TeamContext]:
-        """Hent KampKlar-siden for ét barn/hold — aktiviteter *og* hvem siden viser.
-
-        Konteksten bruges til at verificere at vi rent faktisk fik det barn vi
-        bad om (og til at få barnets navn selvom det ikke står på forsiden).
+        DBU holder valget i server-session og sender os videre til
+        PlayerTeam.aspx. Der findes ingen GET-variant: kalder man
+        PlayerTeam.aspx direkte, ryger man tilbage til vælgeren.
         """
-        url = f"{MIT}/MyTeam/MyTeams.aspx"
-        if team_id is not None and person_id is not None:
-            url = f"{url}?teamid={team_id}&contactforpersonid={person_id}"
-        html = await self._get_html(url)
-        return parse_myteams(html), parse_myteams_context(html)
+        data = dict(form)
+        data["__EVENTTARGET"] = target
+        data["__EVENTARGUMENT"] = ""
+        await self._ensure_authed()
+        headers = self._base_headers()
+        headers["Referer"] = MYTEAMS_URL
+        try:
+            async with self._session.post(
+                MYTEAMS_URL, data=data, headers=headers
+            ) as r:
+                if r.status != 200:
+                    raise DbuConnectionError(f"Holdvalg gav status {r.status}")
+                return await r.text()
+        except aiohttp.ClientError as err:
+            raise DbuConnectionError(f"Holdvalg fejlede: {err}") from err
 
-    async def fetch_children(self) -> list[Child]:
-        events = await self.fetch_dashboard()
-        return discover_children(events)
+    async def fetch_children_with_activities(
+        self,
+    ) -> list[tuple[Child, list[TeamActivity]]]:
+        """Hent alle børn og deres aktiviteter.
 
-    async def fetch_all_activities(self) -> dict[str, list[TeamActivity]]:
-        """Hent myteams pr. barn. Returnerer dict keyed by Child.key."""
-        children = await self.fetch_children()
-        results: dict[str, list[TeamActivity]] = {}
-        for child in children:
-            results[child.key] = await self.fetch_myteams(
-                team_id=child.team_id, person_id=child.person_id
+        KampKlar-forsiden er en vælger med én række pr. barn/hold — den er den
+        eneste komplette liste over børn på mit.dbu.dk, og den viser også børn
+        uden aktiviteter. Har du kun ét barn, springer DBU vælgeren over og
+        viser holdsiden med det samme.
+        """
+        html = await self._get_html(MYTEAMS_URL)
+        context = parse_myteams_context(html)
+
+        if context.is_team_page:
+            return [(_child_from_context(context), parse_myteams(html))]
+
+        rows = parse_myteams_chooser(html)
+        if not rows:
+            _LOG.warning(
+                "KampKlar-siden havde hverken hold eller vælger — "
+                "har mit.dbu.dk ændret sig igen?"
             )
-        return results
+            return []
+
+        form = parse_aspnet_form(html)
+        out: list[tuple[Child, list[TeamActivity]]] = []
+        for row in rows:
+            page = await self.fetch_team_page(row.postback_target, form)
+            ctx = parse_myteams_context(page)
+            if not ctx.is_team_page:
+                # Holdvalget slog fejl — behold barnet med det vælgeren ved,
+                # så det ikke forsvinder ud af Home Assistant.
+                _LOG.warning(
+                    "Kunne ikke åbne holdsiden for %s (%s)",
+                    row.child_name,
+                    row.team_name,
+                )
+                out.append((_child_from_row(row), []))
+                continue
+            child = _child_from_context(ctx)
+            child.postback_target = row.postback_target
+            child.name = child.name or row.child_name
+            child.team_name = child.team_name or row.team_name
+            out.append((child, parse_myteams(page)))
+        return out
 
     async def _ensure_authed(self) -> None:
         if not self._logged_in:

@@ -117,6 +117,8 @@ def _activity_dict(activity: TeamActivity) -> dict[str, Any]:
         "weekday": activity.weekday,
         "time": activity.time_range,
         "location": activity.location,
+        "meeting_time": activity.meeting_time,
+        "pool": activity.pool,
         "signup_status": activity.signup_status,
         "signup_locked": activity.signup_locked,
     }
