@@ -6,6 +6,7 @@ Hver parser tager rå HTML-streng og returnerer en liste/dict af dataklasser.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from urllib.parse import parse_qs, urlparse
@@ -17,19 +18,33 @@ DK_MONTHS = {
     "jul": 7, "aug": 8, "sep": 9, "okt": 10, "nov": 11, "dec": 12,
 }
 
-# Tilmeldingsstatusser som mit.dbu.dk bruger: nøgle -> (label, emoji).
+# Tilmeldingsstatusser som mit.dbu.dk bruger: nøgle -> label.
 # Til kampe udtager træneren en trup, så der er flere trin end ved træning.
 # Rækkefølgen er den de vises i i indstillingerne.
-SIGNUP_STATUSES: dict[str, tuple[str, str]] = {
-    "tilmeldt": ("Tilmeldt", "✅"),
-    "udtaget_bekraeftet": ("Udtaget (bekræftet)", "⭐"),
-    "udtaget": ("Udtaget", "📋"),
-    "udtaget_ikke_bekraeftet": ("Udtaget (ikke bekræftet)", "⏳"),
-    "til_raadighed": ("Til rådighed", "🟠"),
-    "ikke_svaret": ("Ikke svaret", "❓"),
-    "frameldt": ("Frameldt", "❌"),
-    "andet": ("Andet", "▫️"),
+SIGNUP_STATUSES: dict[str, str] = {
+    "tilmeldt": "Tilmeldt",
+    "udtaget_bekraeftet": "Udtaget (bekræftet)",
+    "udtaget": "Udtaget",
+    "udtaget_ikke_bekraeftet": "Udtaget (ikke bekræftet)",
+    "til_raadighed": "Til rådighed",
+    "ikke_svaret": "Ikke svaret",
+    "frameldt": "Frameldt",
+    "andet": "Andet",
 }
+
+# Statusser der er værd at skrive i kalenderens titel: dem hvor noget ikke er
+# som det skal være. Er man tilmeldt eller udtaget og har bekræftet, er der
+# ingen grund til at fylde titlen med det.
+NOTABLE_STATUSES: tuple[str, ...] = (
+    "frameldt",
+    "ikke_svaret",
+    "udtaget_ikke_bekraeftet",
+    "til_raadighed",
+    "andet",
+)
+
+# æ/ø/å skal med over i options-nøglerne uden at blive væk
+_SLUG_CHARS = str.maketrans({"æ": "ae", "ø": "oe", "å": "aa"})
 
 
 @dataclass
@@ -510,6 +525,53 @@ def normalize_signup_status(status: str | None) -> str:
     if "ikke svaret" in text:
         return "ikke_svaret"
     return "andet"
+
+
+def type_slug(activity_type: str | None) -> str:
+    """Slug til en aktivitetstype — bruges som nøgle i indstillingerne.
+
+    Typerne er fri tekst fra DBU ("Træning", "Kamp", "Stævne"), så nøglen skal
+    kunne holde til mellemrum og danske tegn: "Træning" -> "traening".
+    """
+    text = (activity_type or "").strip().lower().translate(_SLUG_CHARS)
+    return re.sub(r"[^a-z0-9]+", "_", text).strip("_") or "ukendt"
+
+
+def default_statuses_for_type(activity_type: str | None) -> list[str]:
+    """Hvilke statusser en type viser, når man ikke selv har valgt.
+
+    Ved træning er status kun interessant hvis man har meldt fra — og så vil
+    man typisk ikke se den i kalenderen. Alle andre typer (kampe, stævner,
+    og typer vi aldrig har set før) viser alt, så intet forsvinder lydløst.
+    """
+    if "traening" in type_slug(activity_type):
+        return [key for key in SIGNUP_STATUSES if key != "frameldt"]
+    return list(SIGNUP_STATUSES)
+
+
+def calendar_title(
+    activity: TeamActivity,
+    with_type: bool = True,
+    title_statuses: Sequence[str] = NOTABLE_STATUSES,
+) -> str:
+    """Titlen på en kalenderbegivenhed.
+
+    Typen skrives foran, så en kamp kan skelnes fra en træning direkte i
+    kalenderen ("Kamp: Vildbjerg SF - Snejbjerg SG&I"). Status skrives kun
+    bagest når den afviger ("Træning på Kunsten (Frameldt)") — ellers ville
+    hver eneste begivenhed bære en parentes der ikke siger noget.
+    """
+    title = activity.title or "(aktivitet)"
+    if with_type and activity.activity_type:
+        title = f"{activity.activity_type}: {title}"
+
+    key = normalize_signup_status(activity.signup_status)
+    if key in (title_statuses or ()):
+        # DBU's egen ordlyd, så den matcher det man ser på mit.dbu.dk
+        status = (activity.signup_status or "").strip() or SIGNUP_STATUSES.get(key, "")
+        if status:
+            title = f"{title} ({status})"
+    return title
 
 
 def parse_aspnet_form(html: str) -> dict[str, str]:

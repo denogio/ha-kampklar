@@ -53,11 +53,16 @@
     "step": {
       "init": {
         "title": "Kampklar settings",
-        "description": "Choose what the calendar should contain. Sensors are unaffected — they always show everything.",
+        "description": "Choose what the calendar should contain. Statuses are picked per activity type — for training the status usually only matters if you have declined. Types found: {types}. Sensors are unaffected; they always show everything.",
         "data": {
-          "calendar_statuses": "Show activities with these sign-up statuses",
+          "calendar_statuses_traening": "Training — show these statuses",
+          "calendar_statuses_kamp": "Match — show these statuses",
+          "calendar_statuses_staevne": "Tournament — show these statuses",
+          "calendar_statuses_moede": "Meeting — show these statuses",
+          "calendar_statuses_andet": "Other — show these statuses",
           "calendar_types": "Only show these activity types (empty = all)",
-          "calendar_prefix": "Show status in the event title"
+          "calendar_title_type": "Put the type in front of the title (\"Match: …\")",
+          "calendar_title_statuses": "Put the status in the title for these statuses"
         }
       }
     }

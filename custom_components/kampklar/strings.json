@@ -53,11 +53,16 @@
     "step": {
       "init": {
         "title": "Kampklar-indstillinger",
-        "description": "Vælg hvad kalenderen skal indeholde. Sensorerne påvirkes ikke — de viser altid alt.",
+        "description": "Vælg hvad kalenderen skal indeholde. Statusvalget er pr. aktivitetstype — ved træning er status typisk kun interessant hvis du har meldt fra. Fundne typer: {types}. Sensorerne påvirkes ikke; de viser altid alt.",
         "data": {
-          "calendar_statuses": "Vis aktiviteter med disse tilmeldingsstatusser",
+          "calendar_statuses_traening": "Træning — vis disse statusser",
+          "calendar_statuses_kamp": "Kamp — vis disse statusser",
+          "calendar_statuses_staevne": "Stævne — vis disse statusser",
+          "calendar_statuses_moede": "Møde — vis disse statusser",
+          "calendar_statuses_andet": "Andet — vis disse statusser",
           "calendar_types": "Vis kun disse aktivitetstyper (tom = alle)",
-          "calendar_prefix": "Vis status i begivenhedens titel"
+          "calendar_title_type": "Skriv typen foran titlen (\"Kamp: …\")",
+          "calendar_title_statuses": "Skriv status i titlen for disse statusser"
         }
       }
     }

@@ -96,34 +96,32 @@ liste.
 
 **Settings → Devices & Services → Kampklar → Konfigurer.**
 
-Kalenderen kan hurtigt blive støjende, når hvert barn har både træning, kampe
-og stævner. Derfor kan du vælge:
+Kalenderen bliver hurtigt støjende når hvert barn har både træning, kampe og
+stævner. Derfor:
 
-- **Tilmeldingsstatusser** — hvilke aktiviteter der overhovedet kommer i
-  kalenderen. Vil du kun se det barnet faktisk skal til, så slå *Frameldt* fra;
-  vil du kun se kampe han er udtaget til, så vælg kun *Udtaget*-statusserne.
+- **Typen står foran titlen** — `Kamp: Vestby IF - Nabolaget B` og
+  `Træning: Træning på Bane 2`, så en kamp kan skelnes fra en træning direkte
+  i kalenderen. Kan slås fra.
+- **Status står kun i titlen når den afviger** — `Træning på Kunsten
+  (Frameldt)`, `Vestby IF - Nabolaget B (Ikke svaret)`. Er alt som det skal
+  være, er titlen ren. Du vælger selv hvilke statusser der regnes som
+  afvigende; som udgangspunkt er det Frameldt, Ikke svaret, Udtaget (ikke
+  bekræftet), Til rådighed og Andet.
+- **Statusfiltret er pr. aktivitetstype.** Ved træning er status kun
+  interessant hvis du har meldt fra — derfor er **frameldt træning skjult fra
+  start**, mens kampe viser alt, så du også ser dem du endnu ikke har svaret
+  på. Begge dele kan ændres.
 - **Aktivitetstyper** — tom betyder alle. Listen bygges af de typer din klub
-  rent faktisk bruger (Træning, Kamp, Stævne …).
-- **Status i titlen** — emoji (`⭐ Vestby IF - Nabolaget B`), tekst
-  (`[Udtaget (bekræftet)] …`) eller kun titlen.
+  rent faktisk bruger, og der er ét statusfelt pr. type.
 
-DBU's statusser og deres emoji:
+DBU's statusser: Tilmeldt · Udtaget (bekræftet) · Udtaget · Udtaget (ikke
+bekræftet) · Til rådighed · Ikke svaret · Frameldt · Andet. Sidstnævnte fanger
+statusser vi ikke kender endnu — de bliver vist, ikke skjult.
 
-| Status | | Betyder |
-|---|---|---|
-| Tilmeldt | ✅ | Du har sagt ja (typisk træning) |
-| Udtaget (bekræftet) | ⭐ | Udtaget til truppen, og du har bekræftet |
-| Udtaget | 📋 | Træneren har udtaget barnet |
-| Udtaget (ikke bekræftet) | ⏳ | Udtaget, mangler din bekræftelse |
-| Til rådighed | 🟠 | Meldt til rådighed, ikke udtaget |
-| Ikke svaret | ❓ | Ingen har svaret endnu |
-| Frameldt | ❌ | Meldt fra |
-| Andet | ▫️ | Ukendt status — vises så den ikke forsvinder lydløst |
-
-Indstillingerne gælder kun kalenderen. Sensorerne viser altid alt, så
-`sensor.kampklar_<navn>_kommende_aktiviteter` stadig kan bruges til at se hvad
-der ellers ligger — hver aktivitet har både `signup_status` og en fast
-`signup_status_key` til brug i templates.
+Indstillingerne gælder kun kalenderen. Sensorerne viser altid alt, og hver
+aktivitet bærer både `signup_status` (DBU's ordlyd) og `signup_status_key`
+(fast nøgle) til brug i templates. Begivenhedens beskrivelse har stadig type,
+status, mødetid og pulje — også når titlen er ren.
 
 ## Automatiseringer
 

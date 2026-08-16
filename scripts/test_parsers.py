@@ -12,8 +12,13 @@ from datetime import date
 from pathlib import Path
 
 from parsers import (
+    NOTABLE_STATUSES,
+    TeamActivity,
     SIGNUP_STATUSES,
     Child,
+    calendar_title,
+    default_statuses_for_type,
+    type_slug,
     assign_display_names,
     discover_children,
     parse_aspnet_form,
@@ -275,9 +280,10 @@ def test_unknown_status_is_kept_as_andet():
     assert "andet" in SIGNUP_STATUSES
 
 
-def test_every_status_has_a_label_and_an_emoji():
-    for key, (label, emoji) in SIGNUP_STATUSES.items():
-        assert label and emoji, key
+def test_every_status_has_a_label():
+    for key, label in SIGNUP_STATUSES.items():
+        assert label, key
+    assert set(NOTABLE_STATUSES) <= set(SIGNUP_STATUSES)
 
 
 def test_statuses_from_the_live_fixtures_are_all_known():
@@ -286,3 +292,83 @@ def test_statuses_from_the_live_fixtures_are_all_known():
     keys = {normalize_signup_status(a.signup_status) for a in acts}
     assert keys <= set(SIGNUP_STATUSES)
     assert "andet" not in keys, "en rigtig status blev ikke genkendt"
+
+
+# ── kalendertitel og filter pr. type ────────────────────────────────────────
+
+
+def _activity(title, activity_type, status):
+    return TeamActivity(
+        activity_id=1,
+        activity_type=activity_type,
+        title=title,
+        weekday=None,
+        time_range="17:00 - 18:30",
+        location=None,
+        signup_status=status,
+        signup_locked=False,
+        date=date(2026, 8, 17),
+    )
+
+
+def test_type_slug_survives_danish_letters():
+    assert type_slug("Træning") == "traening"
+    assert type_slug("Kamp") == "kamp"
+    assert type_slug("Stævne") == "staevne"
+    assert type_slug("Møde på tværs") == "moede_paa_tvaers"
+    assert type_slug(None) == "ukendt"
+
+
+def test_training_hides_frameldt_by_default():
+    """Ved træning er status kun interessant hvis man har meldt fra."""
+    traening = default_statuses_for_type("Træning")
+    assert "frameldt" not in traening
+    assert "tilmeldt" in traening and "ikke_svaret" in traening
+    # kampe og ukendte typer viser alt
+    assert default_statuses_for_type("Kamp") == list(SIGNUP_STATUSES)
+    assert default_statuses_for_type("Stævne") == list(SIGNUP_STATUSES)
+    assert default_statuses_for_type(None) == list(SIGNUP_STATUSES)
+
+
+def test_title_has_the_type_in_front():
+    a = _activity("Vestby IF - Nabolaget B", "Kamp", "Udtaget (bekræftet)")
+    assert calendar_title(a) == "Kamp: Vestby IF - Nabolaget B"
+    assert calendar_title(a, with_type=False) == "Vestby IF - Nabolaget B"
+
+
+def test_title_only_shows_status_when_it_stands_out():
+    normal = _activity("Træning på Bane 2", "Træning", "Tilmeldt")
+    assert calendar_title(normal) == "Træning: Træning på Bane 2"
+
+    afvigende = _activity("Træning på Kunsten", "Træning", "Frameldt")
+    assert calendar_title(afvigende) == "Træning: Træning på Kunsten (Frameldt)"
+
+    ubesvaret = _activity("Vestby IF - Nabolaget B", "Kamp", None)
+    assert calendar_title(ubesvaret) == "Kamp: Vestby IF - Nabolaget B (Ikke svaret)"
+
+
+def test_title_statuses_can_be_turned_off():
+    a = _activity("Træning på Kunsten", "Træning", "Frameldt")
+    assert calendar_title(a, title_statuses=[]) == "Træning: Træning på Kunsten"
+
+
+def test_title_uses_dbus_own_wording():
+    a = _activity("Vestby IF - Nabolaget B", "Kamp", "Udtaget (ikke bekræftet)")
+    assert calendar_title(a).endswith("(Udtaget (ikke bekræftet))")
+
+
+def test_title_without_a_type_has_no_prefix_or_stray_colon():
+    a = _activity("Noget uden type", None, "Tilmeldt")
+    assert calendar_title(a) == "Noget uden type"
+
+
+def test_default_filter_drops_declined_training_but_keeps_declined_match():
+    """Reglen der ligger bag standardvalget i indstillingerne."""
+    def shown(a):
+        return normalize_signup_status(a.signup_status) in default_statuses_for_type(
+            a.activity_type
+        )
+
+    assert not shown(_activity("Træning på Kunsten", "Træning", "Frameldt"))
+    assert shown(_activity("Træning på Bane 2", "Træning", "Tilmeldt"))
+    assert shown(_activity("Vestby IF - Nabolaget B", "Kamp", "Frameldt"))

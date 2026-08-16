@@ -12,17 +12,23 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    CONF_CALENDAR_PREFIX,
-    CONF_CALENDAR_STATUSES,
+    CONF_CALENDAR_TITLE_STATUSES,
+    CONF_CALENDAR_TITLE_TYPE,
     CONF_CALENDAR_TYPES,
-    DEFAULT_CALENDAR_PREFIX,
-    DEFAULT_CALENDAR_STATUSES,
+    CONF_LEGACY_CALENDAR_STATUSES,
+    DEFAULT_CALENDAR_TITLE_STATUSES,
+    DEFAULT_CALENDAR_TITLE_TYPE,
     DOMAIN,
-    PREFIX_EMOJI,
-    PREFIX_TEXT,
+    statuses_option_key,
 )
 from .coordinator import KampklarCoordinator
-from .parsers import SIGNUP_STATUSES, Child, TeamActivity, normalize_signup_status
+from .parsers import (
+    Child,
+    TeamActivity,
+    calendar_title,
+    default_statuses_for_type,
+    normalize_signup_status,
+)
 
 
 async def async_setup_entry(
@@ -46,24 +52,10 @@ async def async_setup_entry(
     _add_new_children()
 
 
-def _summary(activity: TeamActivity, prefix_mode: str) -> str:
-    """Titlen, evt. med tilmeldingsstatus foran.
-
-    Kalenderbegivenheder har kun titel, sted og beskrivelse at gøre godt med,
-    så status skal ind i titlen for at kunne ses direkte i kalenderen.
-    """
-    title = activity.title or "(aktivitet)"
-    key = normalize_signup_status(activity.signup_status)
-    label, emoji = SIGNUP_STATUSES.get(key, SIGNUP_STATUSES["andet"])
-    if prefix_mode == PREFIX_EMOJI:
-        return f"{emoji} {title}"
-    if prefix_mode == PREFIX_TEXT:
-        return f"[{activity.signup_status or label}] {title}"
-    return title
-
-
 def _activity_to_event(
-    activity: TeamActivity, prefix_mode: str = DEFAULT_CALENDAR_PREFIX
+    activity: TeamActivity,
+    with_type: bool = DEFAULT_CALENDAR_TITLE_TYPE,
+    title_statuses: list[str] | None = None,
 ) -> CalendarEvent | None:
     if activity.date is None:
         return None
@@ -103,7 +95,13 @@ def _activity_to_event(
     return CalendarEvent(
         start=start,
         end=end,
-        summary=_summary(activity, prefix_mode),
+        summary=calendar_title(
+            activity,
+            with_type=with_type,
+            title_statuses=title_statuses
+            if title_statuses is not None
+            else DEFAULT_CALENDAR_TITLE_STATUSES,
+        ),
         location=activity.location,
         description=" · ".join(desc_parts) if desc_parts else None,
         uid=str(activity.activity_id) if activity.activity_id else None,
@@ -132,25 +130,42 @@ class KampklarCalendar(CoordinatorEntity[KampklarCoordinator], CalendarEntity):
             "model": child.team_name or "mit.dbu.dk",
         }
 
+    def _statuses_for(self, activity_type: str | None) -> list[str]:
+        """Statusvalget for én aktivitetstype.
+
+        Rækkefølgen er: dit valg for netop den type → det fælles valg fra
+        v0.4.0 → standarden for typen (træning uden frameldt, resten alt).
+        """
+        options = self._entry.options
+        key = statuses_option_key(activity_type)
+        if key in options:
+            return options[key]
+        if CONF_LEGACY_CALENDAR_STATUSES in options:
+            return options[CONF_LEGACY_CALENDAR_STATUSES]
+        return default_statuses_for_type(activity_type)
+
     def _include(self, activity: TeamActivity) -> bool:
         """Skal aktiviteten med i kalenderen? Styres fra integrationens
-        indstillinger (tandhjulet på Kampklar-integrationen)."""
-        options = self._entry.options
-        statuses = options.get(CONF_CALENDAR_STATUSES, DEFAULT_CALENDAR_STATUSES)
-        if normalize_signup_status(activity.signup_status) not in statuses:
-            return False
+        indstillinger (Konfigurer på Kampklar-integrationen)."""
         # Tom typeliste betyder alle typer — ellers ville en ny aktivitetstype
         # lydløst forsvinde fra kalenderen.
-        types = options.get(CONF_CALENDAR_TYPES) or []
-        return not types or activity.activity_type in types
+        types = self._entry.options.get(CONF_CALENDAR_TYPES) or []
+        if types and activity.activity_type not in types:
+            return False
+        statuses = self._statuses_for(activity.activity_type)
+        return normalize_signup_status(activity.signup_status) in statuses
 
     def _events(self) -> list[CalendarEvent]:
-        prefix_mode = self._entry.options.get(
-            CONF_CALENDAR_PREFIX, DEFAULT_CALENDAR_PREFIX
+        options = self._entry.options
+        with_type = options.get(CONF_CALENDAR_TITLE_TYPE, DEFAULT_CALENDAR_TITLE_TYPE)
+        title_statuses = options.get(
+            CONF_CALENDAR_TITLE_STATUSES, DEFAULT_CALENDAR_TITLE_STATUSES
         )
         activities = self.coordinator.data.activities_by_child.get(self._child_key, [])
         out = [
-            _activity_to_event(a, prefix_mode) for a in activities if self._include(a)
+            _activity_to_event(a, with_type, title_statuses)
+            for a in activities
+            if self._include(a)
         ]
         return [e for e in out if e is not None]
 

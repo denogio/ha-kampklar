@@ -24,15 +24,16 @@ from homeassistant.helpers.selector import (
 
 from .api import DbuAuthError, DbuClient, DbuConnectionError
 from .const import (
-    CONF_CALENDAR_PREFIX,
-    CONF_CALENDAR_STATUSES,
+    CONF_CALENDAR_TITLE_STATUSES,
+    CONF_CALENDAR_TITLE_TYPE,
     CONF_CALENDAR_TYPES,
-    DEFAULT_CALENDAR_PREFIX,
-    DEFAULT_CALENDAR_STATUSES,
+    CONF_LEGACY_CALENDAR_STATUSES,
+    DEFAULT_CALENDAR_TITLE_STATUSES,
+    DEFAULT_CALENDAR_TITLE_TYPE,
     DOMAIN,
-    PREFIX_MODES,
+    statuses_option_key,
 )
-from .parsers import SIGNUP_STATUSES
+from .parsers import SIGNUP_STATUSES, default_statuses_for_type
 
 _LOG = logging.getLogger(__name__)
 
@@ -99,9 +100,8 @@ class KampklarOptionsFlow(OptionsFlow):
     def _known_activity_types(self) -> list[str]:
         """Aktivitetstyper vi rent faktisk har set (Træning, Kamp, Stævne …).
 
-        Listen bygges af de hentede data, så den passer til klubbens egne
-        typer i stedet for en hardcodet liste. Allerede valgte typer bliver
-        stående, også hvis de ikke er i data lige nu.
+        Listen bygges af de hentede data, så indstillingerne passer til
+        klubbens egne typer i stedet for en hardcodet liste.
         """
         types: set[str] = set(self._entry.options.get(CONF_CALENDAR_TYPES) or [])
         coordinator = self.hass.data.get(DOMAIN, {}).get(self._entry.entry_id)
@@ -110,67 +110,103 @@ class KampklarOptionsFlow(OptionsFlow):
                 types.update(a.activity_type for a in activities if a.activity_type)
         return sorted(types)
 
+    def _status_default(self, activity_type: str) -> list[str]:
+        """Hvad statusfeltet for en type skal stå på når formularen åbnes."""
+        options = self._entry.options
+        key = statuses_option_key(activity_type)
+        if key in options:
+            return list(options[key])
+        # v0.4.0 havde ét fælles valg — brug det, så det ikke går tabt
+        if CONF_LEGACY_CALENDAR_STATUSES in options:
+            return list(options[CONF_LEGACY_CALENDAR_STATUSES])
+        return default_statuses_for_type(activity_type)
+
+    def _status_selector(self) -> SelectSelector:
+        return SelectSelector(
+            SelectSelectorConfig(
+                options=[
+                    SelectOptionDict(value=key, label=label)
+                    for key, label in SIGNUP_STATUSES.items()
+                ],
+                multiple=True,
+                mode=SelectSelectorMode.LIST,
+            )
+        )
+
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
+        activity_types = self._known_activity_types()
+
         if user_input is not None:
             # Fravælger man alt, udelader HA nøglen helt. Vi skriver den
             # eksplicit, så "ingen statusser" ikke bliver læst som "standard".
-            return self.async_create_entry(
-                title="",
-                data={
-                    CONF_CALENDAR_STATUSES: user_input.get(CONF_CALENDAR_STATUSES, []),
-                    CONF_CALENDAR_TYPES: user_input.get(CONF_CALENDAR_TYPES, []),
-                    CONF_CALENDAR_PREFIX: user_input.get(
-                        CONF_CALENDAR_PREFIX, DEFAULT_CALENDAR_PREFIX
-                    ),
-                },
-            )
-
-        options = self._entry.options
-        schema = vol.Schema(
-            {
-                vol.Optional(
-                    CONF_CALENDAR_STATUSES,
-                    default=list(
-                        options.get(CONF_CALENDAR_STATUSES, DEFAULT_CALENDAR_STATUSES)
-                    ),
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=[
-                            SelectOptionDict(value=key, label=label)
-                            for key, (label, _) in SIGNUP_STATUSES.items()
-                        ],
-                        multiple=True,
-                        mode=SelectSelectorMode.LIST,
-                    )
+            data: dict[str, Any] = {
+                CONF_CALENDAR_TYPES: user_input.get(CONF_CALENDAR_TYPES, []),
+                CONF_CALENDAR_TITLE_TYPE: user_input.get(
+                    CONF_CALENDAR_TITLE_TYPE, DEFAULT_CALENDAR_TITLE_TYPE
                 ),
-                vol.Optional(
-                    CONF_CALENDAR_TYPES,
-                    default=list(options.get(CONF_CALENDAR_TYPES, [])),
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=[
-                            SelectOptionDict(value=t, label=t)
-                            for t in self._known_activity_types()
-                        ],
-                        multiple=True,
-                        custom_value=True,
-                        mode=SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Optional(
-                    CONF_CALENDAR_PREFIX,
-                    default=options.get(CONF_CALENDAR_PREFIX, DEFAULT_CALENDAR_PREFIX),
-                ): SelectSelector(
-                    SelectSelectorConfig(
-                        options=[
-                            SelectOptionDict(value=key, label=label)
-                            for key, label in PREFIX_MODES.items()
-                        ],
-                        mode=SelectSelectorMode.LIST,
-                    )
+                CONF_CALENDAR_TITLE_STATUSES: user_input.get(
+                    CONF_CALENDAR_TITLE_STATUSES, []
                 ),
             }
+            for activity_type in activity_types:
+                key = statuses_option_key(activity_type)
+                data[key] = user_input.get(key, [])
+            # Det fælles valg fra v0.4.0 er nu fordelt ud på typerne
+            data.pop(CONF_LEGACY_CALENDAR_STATUSES, None)
+            return self.async_create_entry(title="", data=data)
+
+        options = self._entry.options
+        fields: dict[Any, Any] = {}
+
+        # Ét statusvalg pr. aktivitetstype — ved træning er status kun
+        # interessant hvis man har meldt fra, ved kamp er der flere trin.
+        for activity_type in activity_types:
+            fields[
+                vol.Optional(
+                    statuses_option_key(activity_type),
+                    description={"suggested_value": self._status_default(activity_type)},
+                    default=self._status_default(activity_type),
+                )
+            ] = self._status_selector()
+
+        fields[
+            vol.Optional(
+                CONF_CALENDAR_TYPES,
+                default=list(options.get(CONF_CALENDAR_TYPES, [])),
+            )
+        ] = SelectSelector(
+            SelectSelectorConfig(
+                options=[SelectOptionDict(value=t, label=t) for t in activity_types],
+                multiple=True,
+                custom_value=True,
+                mode=SelectSelectorMode.DROPDOWN,
+            )
         )
-        return self.async_show_form(step_id="init", data_schema=schema)
+        fields[
+            vol.Optional(
+                CONF_CALENDAR_TITLE_TYPE,
+                default=options.get(
+                    CONF_CALENDAR_TITLE_TYPE, DEFAULT_CALENDAR_TITLE_TYPE
+                ),
+            )
+        ] = bool
+        fields[
+            vol.Optional(
+                CONF_CALENDAR_TITLE_STATUSES,
+                default=list(
+                    options.get(
+                        CONF_CALENDAR_TITLE_STATUSES, DEFAULT_CALENDAR_TITLE_STATUSES
+                    )
+                ),
+            )
+        ] = self._status_selector()
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(fields),
+            description_placeholders={
+                "types": ", ".join(activity_types) or "ingen fundet endnu"
+            },
+        )

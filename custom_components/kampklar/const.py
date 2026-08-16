@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from .parsers import SIGNUP_STATUSES
+from .parsers import NOTABLE_STATUSES, SIGNUP_STATUSES, type_slug
 
 DOMAIN = "kampklar"
 PLATFORMS = ["sensor", "calendar"]
@@ -25,20 +25,24 @@ STORAGE_KEY = f"{DOMAIN}.children"
 
 # ── Indstillinger (options flow) ────────────────────────────────────────────
 # Hvilke aktiviteter der havner i kalenderen, og hvordan status vises.
-CONF_CALENDAR_STATUSES = "calendar_statuses"
 CONF_CALENDAR_TYPES = "calendar_types"
-CONF_CALENDAR_PREFIX = "calendar_prefix"
+CONF_CALENDAR_TITLE_TYPE = "calendar_title_type"
+CONF_CALENDAR_TITLE_STATUSES = "calendar_title_statuses"
 
-PREFIX_EMOJI = "emoji"
-PREFIX_TEXT = "text"
-PREFIX_NONE = "none"
+# Statusvalget er pr. aktivitetstype: "calendar_statuses_kamp",
+# "calendar_statuses_traening" osv. Ved træning er status kun interessant hvis
+# man har meldt fra, mens en kamp har flere trin der er værd at se.
+CALENDAR_STATUSES_PREFIX = "calendar_statuses_"
 
-PREFIX_MODES: dict[str, str] = {
-    PREFIX_EMOJI: "Emoji foran titlen (✅ Træning)",
-    PREFIX_TEXT: "Status i kantet parentes ([Tilmeldt] Træning)",
-    PREFIX_NONE: "Kun titlen",
-}
+# v0.4.0 havde ét fælles statusvalg. Nøglen læses stadig, så et eksisterende
+# valg bliver udgangspunkt for alle typer i stedet for at gå tabt.
+CONF_LEGACY_CALENDAR_STATUSES = "calendar_statuses"
 
-# Som udgangspunkt vises alt — så opdager man også en status man ikke kendte.
-DEFAULT_CALENDAR_STATUSES = list(SIGNUP_STATUSES)
-DEFAULT_CALENDAR_PREFIX = PREFIX_EMOJI
+DEFAULT_CALENDAR_TITLE_TYPE = True
+DEFAULT_CALENDAR_TITLE_STATUSES = list(NOTABLE_STATUSES)
+ALL_STATUSES = list(SIGNUP_STATUSES)
+
+
+def statuses_option_key(activity_type: str | None) -> str:
+    """Options-nøglen der gemmer statusvalget for én aktivitetstype."""
+    return f"{CALENDAR_STATUSES_PREFIX}{type_slug(activity_type)}"
