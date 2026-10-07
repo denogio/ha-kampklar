@@ -54,6 +54,10 @@
       "name": "Tilmeld aktivitet",
       "description": "Tilmeld barnet til en aktivitet på mit.dbu.dk.",
       "fields": {
+        "child_key": {
+          "name": "Barnets nøgle",
+          "description": "Værdien key fra children-attributten. Kræves kun hvis flere børn har samme aktivitet."
+        },
         "activity_id": {
           "name": "Aktivitets-ID",
           "description": "Værdien 'id' fra sensorens activities-attribut."
@@ -68,6 +72,10 @@
       "name": "Frameld aktivitet",
       "description": "Frameld barnet fra en aktivitet på mit.dbu.dk.",
       "fields": {
+        "child_key": {
+          "name": "Barnets nøgle",
+          "description": "Værdien key fra children-attributten. Kræves kun hvis flere børn har samme aktivitet."
+        },
         "activity_id": {
           "name": "Aktivitets-ID",
           "description": "Værdien 'id' fra sensorens activities-attribut."

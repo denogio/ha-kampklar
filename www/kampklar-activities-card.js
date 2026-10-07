@@ -12,6 +12,7 @@ export function activitiesFromStates(states, config = {}) {
     return (source.attributes.activities || []).map((activity) => ({
       ...activity,
       child: child.short_name,
+      child_key: child.key,
       source: source.entity_id || child.entity_ids.upcoming_activities,
     }));
   }).sort((a, b) => `${a.date || ""} ${a.time || ""}`.localeCompare(`${b.date || ""} ${b.time || ""}`));
@@ -25,6 +26,7 @@ export function signupData(activity, action, comment, config = {}) {
     throw new Error("Aktiviteten er lukket for tilmelding.");
   }
   const data = { activity_id: activity.id };
+  if (activity.child_key) data.child_key = activity.child_key;
   if (config.config_entry_id) data.config_entry_id = config.config_entry_id;
   if (action === "frameld") {
     if (!comment.trim()) throw new Error("Skriv en begrundelse for frameldingen.");
@@ -45,7 +47,6 @@ class KampklarActivitiesCard extends HTMLElement {
       <style>
         ha-card { padding: 16px; }
         h2 { margin: 0 0 16px; font-size: 20px; font-weight: 500; }
-        h3 { margin: 20px 0 8px; font-size: 18px; }
         article { padding: 12px 0; border-bottom: 1px solid var(--divider-color, #888); }
         article:last-child { border-bottom: 0; }
         h4 { margin: 0 0 6px; font-size: 16px; }
@@ -94,18 +95,8 @@ class KampklarActivitiesCard extends HTMLElement {
     const focusKey = active?.dataset.key;
     const selection = focusKey ? [active.selectionStart, active.selectionEnd] : undefined;
     this.list.replaceChildren();
-    const groups = new Map();
-    for (const activity of this.activities) {
-      if (!groups.has(activity.child)) groups.set(activity.child, []);
-      groups.get(activity.child).push(activity);
-    }
-    if (!groups.size) this.list.textContent = "Ingen tilgængelige kommende aktiviteter.";
-    for (const [child, activities] of groups) {
-      const heading = document.createElement("h3");
-      heading.textContent = child;
-      this.list.append(heading);
-      for (const activity of activities) this.list.append(this._row(activity));
-    }
+    if (!this.activities.length) this.list.textContent = "Ingen tilgængelige kommende aktiviteter.";
+    for (const activity of this.activities) this.list.append(this._row(activity));
     for (const key of this.drafts.keys()) {
       if (!this.activities.some((activity) => activityKey(activity) === key)) this.drafts.delete(key);
     }
@@ -123,7 +114,7 @@ class KampklarActivitiesCard extends HTMLElement {
     this.drafts.set(key, draft);
     const row = document.createElement("article");
     row.innerHTML = `<h4></h4><p class="details"></p><p class="status"></p><div class="buttons"></div>`;
-    row.querySelector("h4").textContent = activity.title;
+    row.querySelector("h4").textContent = `${activity.child} — ${activity.title}`;
     row.querySelector(".details").textContent = [
       [activity.weekday, activity.date, activity.time].filter(Boolean).join(" · "),
       [activity.type, activity.location].filter(Boolean).join(" · "),

@@ -88,7 +88,7 @@ views:
           {% endif %}
 
       # ---- Alle kommende aktiviteter med handlinger direkte på rækken ----
-      # Grupperet pr. barn; finder automatisk sensor.kampklar_boern eller _born.
+      # Sorteret efter dato/tid med navn på hver række; finder _boern eller _born.
       # Frameld åbner et kommentarfelt, også når nye tilmeldinger er lukket.
       - type: custom:kampklar-activities-card
         title: Kommende aktiviteter

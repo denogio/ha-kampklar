@@ -91,7 +91,7 @@ kalender, beskeder og et kort til tilmelding/framelding.
 1. Kopiér [`www/kampklar-activities-card.js`](www/kampklar-activities-card.js)
    til `www/kampklar-activities-card.js` i din Home Assistant-config. Filen skal
    kopieres separat; installation af integrationen via HACS kopierer ikke kortet.
-2. Registrér `/local/kampklar-activities-card.js?v=3` som **JavaScript module**
+2. Registrér `/local/kampklar-activities-card.js?v=5` som **JavaScript module**
    under **Settings → Dashboards → Resources** (kræver Advanced Mode).
 3. Indsæt `dashboard.yaml` via **Settings → Dashboards → Add Dashboard →
    Raw configuration editor**. Genindlæs browseren efter registrering af kortet.
@@ -101,13 +101,13 @@ Ved YAML-styrede resources tilføjes dette under `lovelace` i `configuration.yam
 ```yaml
 lovelace:
   resources:
-    - url: /local/kampklar-activities-card.js?v=3
+    - url: /local/kampklar-activities-card.js?v=5
       type: module
 ```
 
 Flet ind i en eksisterende `lovelace`-konfiguration i stedet for at oprette nøglen
 to gange. Hvis et YAML-dashboard bruger UI-styrede resources, registreres kortet
-fortsat i UI'en. Ved opdatering af JS-filen ændres `?v=3` til fx `?v=4`.
+fortsat i UI'en. Ved opdatering af JS-filen ændres `?v=5` til fx `?v=6`.
 Kortets JS-fil og dashboardet kan også hentes som separate assets på release-siden.
 
 Det er skrevet navne-uafhængigt: alle børn hentes fra `sensor.kampklar_boern`,
@@ -132,8 +132,9 @@ På en fane for et bestemt barn kan kortet filtreres med `child` (barnets
   child: Emil
 ```
 
-Kortet viser alle kommende aktiviteter grupperet pr. barn, også dem der
-allerede er besvaret. Hver række viser titel, dato, tidspunkt og status med
+Kortet viser alle kommende aktiviteter i én samlet liste sorteret efter dato
+og tidspunkt, også dem der allerede er besvaret. Barnets navn står på hver
+aktivitet. Hver række viser titel, dato, tidspunkt og status med
 **Tilmeld** og **Frameld** direkte på rækken. **Frameld** åbner et kommentarfelt;
 skriv begrundelsen og tryk **Send afbud**. **Annuller** lukker formularen uden
 at sende noget. **Tilmelding lukket** skjuler kun Tilmeld-knappen: afbud kan
@@ -200,6 +201,13 @@ et dashboard, script eller en automatisering:
 Har Home Assistant flere Kampklar-konti, vælges den ønskede konto i actionens
 felt **Kampklar-konto**. Efter handlingen henter integrationen straks den nye
 status fra DBU.
+
+Fra v0.6.3 vælger integrationen altid det rigtige barn/hold i DBU-sessionen før
+en skrivehandling. Opdatér integrationen til mindst v0.6.3, før du bruger det
+nyeste dashboardkort (som sender `child_key`). Datahentning og skrivehandlinger køres én ad gangen, så de ikke
+skifter sessionens barn undervejs. Dashboardkortet sender også `child_key`
+automatisk. Ved manuelle actions kan feltet udelades, hvis aktivitets-ID'et kun
+findes hos ét barn; ellers angives barnets `key` fra children-attributten.
 
 ## Automatiseringer
 

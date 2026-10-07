@@ -35,6 +35,21 @@ test("finds both children, uses born fallback and sorts by date", () => {
   assert.equal(activities[1].source, "sensor.emil");
 });
 
+test("includes the child's stable key in action data", () => {
+  const keyedStates = {
+    ...states,
+    "sensor.kampklar_born": {
+      ...states["sensor.kampklar_born"],
+      attributes: { children: [{ ...states["sensor.kampklar_born"].attributes.children[0], key: "t11" }] },
+    },
+  };
+  const activity = activitiesFromStates(keyedStates)[0];
+  assert.equal(activity.child_key, "t11");
+  assert.deepEqual(plain(signupData(activity, "frameld", "Er syg")), {
+    activity_id: 42, child_key: "t11", comment: "Er syg",
+  });
+});
+
 test("supports a child filter and a renamed parent entity", () => {
   const activities = activitiesFromStates({ ...states, "sensor.custom": states["sensor.kampklar_born"] }, {
     children_entity: "sensor.custom", child: "Emil",
@@ -152,6 +167,7 @@ class Element {
     this.dataset = {};
   }
   append(...children) { this.children.push(...children); }
+  replaceChildren(...children) { this.children = children; }
   querySelector(selector) {
     if (!this.selectors.has(selector)) {
       const tag = selector === ".buttons" ? "div" : selector === "textarea" ? "textarea" : "p";
@@ -201,6 +217,32 @@ test("DBU titles are rendered as text, never injected into HTML", () => {
   const card = rowCard();
   const title = '<img src="x" onerror="alert(1)">';
   const row = Card.prototype._row.call(card, { ...activitiesFromStates(states)[1], title });
-  assert.equal(row.querySelector("h4").textContent, title);
+  assert.equal(row.querySelector("h4").textContent, `Emil — ${title}`);
   assert.ok(!row.innerHTML.includes(title));
+});
+
+test("renders a chronological mixed-child list with a name on every row", () => {
+  const activity = states["sensor.emil"].attributes.activities[0];
+  const mixedStates = {
+    ...states,
+    "sensor.emil": { state: "2", attributes: { activities: [
+      { ...activity, date: "2026-10-14", time: "18:00 - 19:00" },
+      { ...activity, id: 44, date: "2026-10-14", time: "15:00 - 16:00" },
+    ] } },
+    "sensor.ida": { state: "1", attributes: { activities: [
+      { ...activity, id: 43, date: "2026-10-14", time: "16:00 - 17:00" },
+    ] } },
+  };
+  const card = {
+    ...rowCard(), list: new Element("div"), shadowRoot: {},
+    activities: activitiesFromStates(mixedStates),
+    _row: Card.prototype._row, _updateBusy() {},
+  };
+  Card.prototype._render.call(card);
+  assert.deepEqual(card.list.children.map((row) => row.querySelector("h4").textContent), [
+    "Emil — Træning", "Ida — Træning", "Emil — Træning",
+  ]);
+  assert.deepEqual(card.list.children.map((row) => row.querySelector(".details").textContent.split("\\n")[0]), [
+    "2026-10-14 · 15:00 - 16:00", "2026-10-14 · 16:00 - 17:00", "2026-10-14 · 18:00 - 19:00",
+  ]);
 });

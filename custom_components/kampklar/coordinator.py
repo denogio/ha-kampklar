@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 
@@ -9,7 +10,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import DbuAuthError, DbuClient, DbuConnectionError
+from .api import DbuActionError, DbuAuthError, DbuClient, DbuConnectionError
 from .const import (
     DOMAIN,
     MESSAGE_DETAIL_COUNT,
@@ -48,6 +49,8 @@ class KampklarCoordinator(DataUpdateCoordinator[KampklarData]):
             update_interval=UPDATE_INTERVAL,
         )
         self.client = client
+        # DBU gemmer det valgte barn i sessionen: hentning og skrivning må ikke overlappe.
+        self._dbu_lock = asyncio.Lock()
         self._body_cache: dict[int, str] = {}
         self._known_children: list[Child] = []
         self._store: Store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}.{entry_id}")
@@ -129,7 +132,32 @@ class KampklarCoordinator(DataUpdateCoordinator[KampklarData]):
         await self._async_save_known_children(children)
         return children, activities
 
+    async def async_set_signup(
+        self, activity_id: int, *, attending: bool, comment: str = "", child_key: str | None = None
+    ) -> None:
+        async with self._dbu_lock:
+            data = self.data
+            if data is None:
+                raise DbuActionError("Kampklar-data er ikke indlæst endnu")
+            matches = [
+                child for child in data.children
+                if (child_key is None or child.key == child_key)
+                and any(
+                    activity.activity_id == activity_id
+                    for activity in data.activities_by_child.get(child.key, [])
+                )
+            ]
+            if len(matches) != 1:
+                raise DbuActionError("Aktiviteten findes ikke entydigt; vælg barn med child_key")
+            await self.client.set_signup(
+                activity_id, child=matches[0], attending=attending, comment=comment
+            )
+
     async def _async_update_data(self) -> KampklarData:
+        async with self._dbu_lock:
+            return await self._async_fetch_data()
+
+    async def _async_fetch_data(self) -> KampklarData:
         try:
             children, activities = await self._async_resolve_children()
             inbox = await self.client.fetch_inbox()

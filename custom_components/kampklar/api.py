@@ -212,9 +212,10 @@ class DbuClient:
         return parse_message_details(html, message_id)
 
     async def set_signup(
-        self, activity_id: int, *, attending: bool, comment: str = ""
+        self, activity_id: int, *, child: Child, attending: bool, comment: str = ""
     ) -> None:
         """Tilmeld eller frameld en aktivitet og kontrollér resultatet."""
+        await self._select_child(child)
         url = f"{MIT}/MyTeam/PlayerActivity.aspx?activityid={activity_id}"
         action = "Tilmeld" if attending else "Frameld"
 
@@ -244,6 +245,28 @@ class DbuClient:
         updated_html = await self._get_html(url)
         if not _signup_confirmed(updated_html, attending):
             raise DbuActionError(f"DBU bekræftede ikke handlingen '{action}'")
+
+    async def _select_child(self, child: Child) -> None:
+        """Vælg barnets aktuelle hold fra en frisk formular, aldrig et gemt postback-ID."""
+        html = await self._get_html(MYTEAMS_URL)
+        context = parse_myteams_context(html)
+        if not context.is_team_page:
+            matches = [
+                row for row in parse_myteams_chooser(html)
+                if row.child_name == child.name and row.team_name == child.team_name
+            ]
+            if len(matches) != 1:
+                raise DbuActionError("Kunne ikke vælge barnet entydigt på DBU")
+            page = await self.fetch_team_page(
+                matches[0].postback_target, parse_aspnet_form(html)
+            )
+            context = parse_myteams_context(page)
+        if (
+            not context.is_team_page
+            or context.team_id != child.team_id
+            or context.child_name != child.name
+        ):
+            raise DbuActionError("DBU viste ikke det forventede barn og hold")
 
     async def fetch_team_page(self, target: str, form: dict[str, str]) -> str:
         """Vælg et hold i KampKlar-vælgeren via ASP.NET-postback.

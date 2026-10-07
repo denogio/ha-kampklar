@@ -54,6 +54,10 @@
       "name": "Sign up for activity",
       "description": "Sign the child up for an activity on mit.dbu.dk.",
       "fields": {
+        "child_key": {
+          "name": "Child key",
+          "description": "The key from the children attribute. Only required if multiple children share an activity."
+        },
         "activity_id": {
           "name": "Activity ID",
           "description": "The 'id' value from the sensor's activities attribute."
@@ -68,6 +72,10 @@
       "name": "Decline activity",
       "description": "Decline an activity for the child on mit.dbu.dk.",
       "fields": {
+        "child_key": {
+          "name": "Child key",
+          "description": "The key from the children attribute. Only required if multiple children share an activity."
+        },
         "activity_id": {
           "name": "Activity ID",
           "description": "The 'id' value from the sensor's activities attribute."

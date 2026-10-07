@@ -36,6 +36,7 @@ _BASE_ACTION_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_ACTIVITY_ID): cv.positive_int,
         vol.Optional(ATTR_CONFIG_ENTRY_ID): cv.string,
+        vol.Optional("child_key"): cv.string,
     }
 )
 _DECLINE_SCHEMA = _BASE_ACTION_SCHEMA.extend(
@@ -66,10 +67,11 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def _set_signup(call: ServiceCall, *, attending: bool) -> None:
         coordinator = _coordinator(call)
         try:
-            await coordinator.client.set_signup(
+            await coordinator.async_set_signup(
                 call.data[ATTR_ACTIVITY_ID],
                 attending=attending,
                 comment=call.data.get(ATTR_COMMENT, ""),
+                child_key=call.data.get("child_key"),
             )
         except DbuActionError as err:
             raise ServiceValidationError(str(err)) from err

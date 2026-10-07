@@ -1,5 +1,8 @@
 tilmeld:
   fields:
+    child_key:
+      selector:
+        text:
     activity_id:
       required: true
       selector:
@@ -13,6 +16,9 @@ tilmeld:
 
 frameld:
   fields:
+    child_key:
+      selector:
+        text:
     activity_id:
       required: true
       selector:
