@@ -1,13 +1,13 @@
 {
   "domain": "kampklar",
   "name": "Kampklar (mit.dbu.dk)",
-  "version": "0.5.0",
-  "documentation": "https://github.com/denogio/ha-dbu-kampklar",
-  "issue_tracker": "https://github.com/denogio/ha-dbu-kampklar/issues",
   "codeowners": ["@denogio"],
   "config_flow": true,
-  "iot_class": "cloud_polling",
-  "requirements": ["beautifulsoup4>=4.12"],
+  "dependencies": [],
+  "documentation": "https://github.com/denogio/ha-dbu-kampklar",
   "integration_type": "service",
-  "dependencies": []
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/denogio/ha-dbu-kampklar/issues",
+  "requirements": ["beautifulsoup4>=4.12"],
+  "version": "0.6.0"
 }

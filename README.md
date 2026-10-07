@@ -15,6 +15,7 @@ Henter dine børns fodboldaktiviteter, kampe og beskeder fra
 - ⚙️ **Indstillinger for kalenderen** — vælg hvilke tilmeldingsstatusser og
   aktivitetstyper der skal med, og se status direkte i begivenhedens titel
 - 📩 **Beskeder fra trænere/klub** — seneste 10 med fuld body cached lokalt
+- ✅ **Tilmeld og frameld aktiviteter** — framelding kræver en kommentar
 - 🔁 **Multi-barn-støtte** — nye børn opdages automatisk og får entiteter uden
   genstart af Home Assistant
 - 🔐 **UI-baseret config** — brugernavn/password gemmes krypteret i HA
@@ -123,6 +124,29 @@ aktivitet bærer både `signup_status` (DBU's ordlyd) og `signup_status_key`
 (fast nøgle) til brug i templates. Begivenhedens beskrivelse har stadig type,
 status, mødetid og pulje — også når titlen er ren.
 
+## Tilmelding og framelding
+
+Aktivitets-ID'et står som `id` i `activities`-attributten på sensorerne for
+kommende aktiviteter og manglende tilmelding. Brug integrationens actions fra
+et dashboard, script eller en automatisering:
+
+```yaml
+# Tilmeld
+- action: kampklar.tilmeld
+  data:
+    activity_id: 6950992
+
+# Frameld — kommentar er obligatorisk
+- action: kampklar.frameld
+  data:
+    activity_id: 6950992
+    comment: "Er syg"
+```
+
+Har Home Assistant flere Kampklar-konti, vælges den ønskede konto i actionens
+felt **Kampklar-konto**. Efter handlingen henter integrationen straks den nye
+status fra DBU.
+
 ## Automatiseringer
 
 Eksempler ligger i [`automations/kampklar.yaml`](automations/kampklar.yaml):
@@ -163,7 +187,9 @@ KampKlar-siden hverken havde hold eller vælger, har DBU lagt siden om igen —
 
 - mit.dbu.dk eksponerer ikke "læst/ulæst"-status i indbakkelisten — vi viser
   bare de seneste 10 beskeder uanset.
-- Afmelding fra aktiviteter er endnu ikke implementeret (på roadmap).
+- Tilmelding og framelding bruger mit.dbu.dk's ASP.NET-formularer, da DBU ikke
+  stiller et officielt skrive-API til rådighed. Sideændringer hos DBU kan derfor
+  kræve en opdatering af integrationen.
 - Kalender-kortet i Lovelace kan ikke tage en dynamisk entity-liste, så nye
   børn skal tilføjes der i hånden.
 

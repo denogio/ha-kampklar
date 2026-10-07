@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import urljoin
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -68,6 +69,47 @@ class DbuAuthError(Exception):
 
 class DbuConnectionError(Exception):
     """Netværksfejl mod dbu.dk / mit.dbu.dk."""
+
+
+class DbuActionError(Exception):
+    """En skrivehandling blev afvist af mit.dbu.dk."""
+
+
+def _signup_postback_data(
+    html: str, action: str, comment: str = ""
+) -> tuple[str, dict[str, str]]:
+    """Find DBU's statusknap og byg dens ASP.NET-postback."""
+    soup = BeautifulSoup(html, "html.parser")
+    form = soup.find("form")
+    if form is None:
+        raise DbuActionError("Fandt ingen formular på aktivitetssiden")
+
+    wanted = action.casefold()
+    button = next(
+        (
+            element
+            for element in form.find_all("button")
+            if element.get_text(" ", strip=True).casefold() == wanted
+        ),
+        None,
+    )
+    if button is None:
+        raise DbuActionError(f"Handlingen '{action}' er ikke tilgængelig")
+
+    onclick = button.get("onclick", "")
+    match = re.search(r"__doPostBack\(['\"]([^'\"]+)['\"],['\"]([^'\"]*)", onclick)
+    if match is None:
+        raise DbuActionError(f"Kunne ikke aflæse handlingen '{action}'")
+
+    data = {
+        element["name"]: element.get("value") or ""
+        for element in form.find_all("input", type="hidden")
+        if element.get("name")
+    }
+    data["__EVENTTARGET"] = match.group(1)
+    data["__EVENTARGUMENT"] = match.group(2)
+    data["ctl00$cphMain$rtbComment"] = comment
+    return form.get("action") or "", data
 
 
 class DbuClient:
@@ -150,6 +192,45 @@ class DbuClient:
             f"{MIT}/Message/MessageDetails.aspx?id={message_id}"
         )
         return parse_message_details(html, message_id)
+
+    async def set_signup(
+        self, activity_id: int, *, attending: bool, comment: str = ""
+    ) -> None:
+        """Tilmeld eller frameld en aktivitet og kontrollér resultatet."""
+        url = f"{MIT}/MyTeam/PlayerActivity.aspx?activityid={activity_id}"
+        action = "Tilmeld" if attending else "Frameld"
+        expected_next_action = "Frameld" if attending else "Tilmeld"
+
+        html = await self._get_html(url)
+        form_action, data = _signup_postback_data(html, action, comment)
+        headers = self._base_headers()
+        headers["Referer"] = url
+
+        try:
+            async with self._session.post(
+                urljoin(url, form_action),
+                data=data,
+                headers=headers,
+                allow_redirects=True,
+            ) as response:
+                await response.read()
+                if response.status != 200 or "login" in response.url.path.lower():
+                    self._logged_in = False
+                    raise DbuActionError(
+                        f"DBU afviste handlingen med status {response.status}"
+                    )
+        except aiohttp.ClientError as err:
+            raise DbuConnectionError(f"Kunne ikke {action.lower()} aktiviteten: {err}") from err
+
+        # Hent siden igen: den modsatte knap er den mest stabile bekræftelse på,
+        # at DBU faktisk gemte ændringen (og ikke viste en valideringsfejl).
+        updated_html = await self._get_html(url)
+        try:
+            _signup_postback_data(updated_html, expected_next_action)
+        except DbuActionError as err:
+            raise DbuActionError(
+                f"DBU bekræftede ikke handlingen '{action}'"
+            ) from err
 
     async def fetch_team_page(self, target: str, form: dict[str, str]) -> str:
         """Vælg et hold i KampKlar-vælgeren via ASP.NET-postback.

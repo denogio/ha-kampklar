@@ -49,6 +49,40 @@
       }
     }
   },
+  "services": {
+    "tilmeld": {
+      "name": "Tilmeld aktivitet",
+      "description": "Tilmeld barnet til en aktivitet på mit.dbu.dk.",
+      "fields": {
+        "activity_id": {
+          "name": "Aktivitets-ID",
+          "description": "Værdien 'id' fra sensorens activities-attribut."
+        },
+        "config_entry_id": {
+          "name": "Kampklar-konto",
+          "description": "Skal kun vælges, hvis Home Assistant har flere Kampklar-konti."
+        }
+      }
+    },
+    "frameld": {
+      "name": "Frameld aktivitet",
+      "description": "Frameld barnet fra en aktivitet på mit.dbu.dk.",
+      "fields": {
+        "activity_id": {
+          "name": "Aktivitets-ID",
+          "description": "Værdien 'id' fra sensorens activities-attribut."
+        },
+        "comment": {
+          "name": "Kommentar",
+          "description": "Begrundelse for frameldingen."
+        },
+        "config_entry_id": {
+          "name": "Kampklar-konto",
+          "description": "Skal kun vælges, hvis Home Assistant har flere Kampklar-konti."
+        }
+      }
+    }
+  },
   "options": {
     "step": {
       "init": {

@@ -1,0 +1,30 @@
+tilmeld:
+  fields:
+    activity_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: kampklar
+
+frameld:
+  fields:
+    activity_id:
+      required: true
+      selector:
+        number:
+          min: 1
+          mode: box
+    comment:
+      required: true
+      selector:
+        text:
+          multiline: true
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: kampklar
