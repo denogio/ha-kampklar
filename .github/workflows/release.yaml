@@ -22,7 +22,10 @@ jobs:
       - name: "Create Release"
         uses: "softprops/action-gh-release@v1"
         with:
-          files: "kampklar.zip"
+          files: |
+            kampklar.zip
+            www/kampklar-activities-card.js
+            dashboard.yaml
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

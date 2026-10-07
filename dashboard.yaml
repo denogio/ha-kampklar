@@ -1,5 +1,9 @@
 # Kampklar-dashboard.
 #
+# Før brug: kopiér www/kampklar-activities-card.js til HA's www/ og registrér
+# /local/kampklar-activities-card.js som en JavaScript module-resource.
+# Se README.md for YAML-mode og faner pr. barn.
+#
 # Brug: Settings → Dashboards → "Add Dashboard" → "New dashboard from scratch"
 # → tre prikker → "Raw configuration editor" → indsæt indholdet herunder.
 #
@@ -45,7 +49,7 @@ views:
       - type: markdown
         title: Børn
         content: |
-          {% set children = state_attr('sensor.kampklar_boern','children') or [] %}
+          {% set children = state_attr('sensor.kampklar_boern','children') or state_attr('sensor.kampklar_born','children') or [] %}
           {% if children | length == 0 %}
           _Ingen børn fundet på DBU-kontoen._
           {% else %}
@@ -83,31 +87,11 @@ views:
           {% endfor %}
           {% endif %}
 
-      # ---- Alle kommende aktiviteter, grupperet pr. barn ----
-      # Listerne hentes fra hvert barns egen sensor via de entity-id'er
-      # sensor.kampklar_boern oplyser — så virker det uanset antal børn.
-      - type: markdown
+      # ---- Alle kommende aktiviteter med handlinger direkte på rækken ----
+      # Grupperet pr. barn; finder automatisk sensor.kampklar_boern eller _born.
+      # Frameld åbner et kommentarfelt, også når nye tilmeldinger er lukket.
+      - type: custom:kampklar-activities-card
         title: Kommende aktiviteter
-        content: |
-          {% for c in state_attr('sensor.kampklar_boern','children') or [] %}
-          {% set eid = c.entity_ids.upcoming_activities %}
-          {% set acts = (state_attr(eid,'activities') if eid else []) or [] %}
-          ### {{ c.short_name }}
-          {% if acts | length == 0 %}
-          _Ingen kommende aktiviteter_
-          {% else %}
-          {% for a in acts %}
-          **{{ a.title }}** {% if a.type %}· _{{ a.type }}_{% endif %}
-          🗓️ {{ a.weekday or '' }} {{ a.date }}{% if a.time %} · kl. {{ a.time }}{% endif %}
-          {% if a.location %}📍 {{ a.location }}{% endif %}
-          {% if a.meeting_time %}⏰ Mødetid {{ a.meeting_time }}{% endif %}
-          {% if a.signup_status %}Status: **{{ a.signup_status }}**{% if a.signup_locked %} (lukket){% endif %}{% endif %}
-
-          {% endfor %}
-          {% endif %}
-
-          ---
-          {% endfor %}
 
       # ---- Kalender ----
       # Kalender-kortet kan desværre ikke tage en dynamisk entity-liste, så her

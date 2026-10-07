@@ -21,6 +21,7 @@ from .parsers import (
     MessageDetails,
     TeamActivity,
     TeamContext,
+    normalize_signup_status,
     parse_aspnet_form,
     parse_dashboard,
     parse_inbox,
@@ -112,6 +113,23 @@ def _signup_postback_data(
     return form.get("action") or "", data
 
 
+def _signup_confirmed(html: str, attending: bool) -> bool:
+    """Læs personlig status: en lukket aktivitet får ikke nødvendigvis en modsat knap."""
+    soup = BeautifulSoup(html, "html.parser")
+    status = soup.find(id=re.compile(r"_lblStatusInfo$"))
+    if status is not None:
+        key = normalize_signup_status(status.get_text(" ", strip=True))
+        if not attending:
+            return key == "frameldt"
+        return key in {"tilmeldt", "til_raadighed", "udtaget", "udtaget_bekraeftet"}
+    # Kompatibilitet med sider, der endnu ikke viser et personligt statusfelt.
+    try:
+        _signup_postback_data(html, "Frameld" if attending else "Tilmeld")
+    except DbuActionError:
+        return False
+    return True
+
+
 class DbuClient:
     """Asynkron klient til mit.dbu.dk."""
 
@@ -199,7 +217,6 @@ class DbuClient:
         """Tilmeld eller frameld en aktivitet og kontrollér resultatet."""
         url = f"{MIT}/MyTeam/PlayerActivity.aspx?activityid={activity_id}"
         action = "Tilmeld" if attending else "Frameld"
-        expected_next_action = "Frameld" if attending else "Tilmeld"
 
         html = await self._get_html(url)
         form_action, data = _signup_postback_data(html, action, comment)
@@ -222,15 +239,11 @@ class DbuClient:
         except aiohttp.ClientError as err:
             raise DbuConnectionError(f"Kunne ikke {action.lower()} aktiviteten: {err}") from err
 
-        # Hent siden igen: den modsatte knap er den mest stabile bekræftelse på,
-        # at DBU faktisk gemte ændringen (og ikke viste en valideringsfejl).
+        # En aktivitet lukket for tilmelding kan stadig tillade afbud.
+        # Kontrollér personlig status, ikke kun om den modsatte knap findes.
         updated_html = await self._get_html(url)
-        try:
-            _signup_postback_data(updated_html, expected_next_action)
-        except DbuActionError as err:
-            raise DbuActionError(
-                f"DBU bekræftede ikke handlingen '{action}'"
-            ) from err
+        if not _signup_confirmed(updated_html, attending):
+            raise DbuActionError(f"DBU bekræftede ikke handlingen '{action}'")
 
     async def fetch_team_page(self, target: str, form: dict[str, str]) -> str:
         """Vælg et hold i KampKlar-vælgeren via ASP.NET-postback.

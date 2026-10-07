@@ -85,13 +85,67 @@ tilføjet, så entity-id'erne aldrig kolliderer.
 
 ## Dashboard
 
-Et færdigt dashboard ligger i [`dashboard.yaml`](dashboard.yaml). Indsæt via
-**Settings → Dashboards → Add Dashboard → Raw configuration editor**.
+Et færdigt dashboard ligger i [`dashboard.yaml`](dashboard.yaml), med overblik,
+kalender, beskeder og et kort til tilmelding/framelding.
+
+1. Kopiér [`www/kampklar-activities-card.js`](www/kampklar-activities-card.js)
+   til `www/kampklar-activities-card.js` i din Home Assistant-config. Filen skal
+   kopieres separat; installation af integrationen via HACS kopierer ikke kortet.
+2. Registrér `/local/kampklar-activities-card.js?v=3` som **JavaScript module**
+   under **Settings → Dashboards → Resources** (kræver Advanced Mode).
+3. Indsæt `dashboard.yaml` via **Settings → Dashboards → Add Dashboard →
+   Raw configuration editor**. Genindlæs browseren efter registrering af kortet.
+
+Ved YAML-styrede resources tilføjes dette under `lovelace` i `configuration.yaml`:
+
+```yaml
+lovelace:
+  resources:
+    - url: /local/kampklar-activities-card.js?v=3
+      type: module
+```
+
+Flet ind i en eksisterende `lovelace`-konfiguration i stedet for at oprette nøglen
+to gange. Hvis et YAML-dashboard bruger UI-styrede resources, registreres kortet
+fortsat i UI'en. Ved opdatering af JS-filen ændres `?v=3` til fx `?v=4`.
+Kortets JS-fil og dashboardet kan også hentes som separate assets på release-siden.
 
 Det er skrevet navne-uafhængigt: alle børn hentes fra `sensor.kampklar_boern`,
 så et nyt barn dukker op af sig selv. Kun kalender-kortet skal have hvert
 barns kalender skrevet ind i hånden — det kort kan ikke tage en dynamisk
-liste.
+liste. Både `sensor.kampklar_boern` og `sensor.kampklar_born` understøttes.
+
+### Tilføj kortet til et eksisterende dashboard
+
+Behold dit dashboard og indsæt dette i en fanes `cards`-liste:
+
+```yaml
+- type: custom:kampklar-activities-card
+  title: Kommende aktiviteter
+```
+
+På en fane for et bestemt barn kan kortet filtreres med `child` (barnets
+`short_name` fra children-attributten):
+
+```yaml
+- type: custom:kampklar-activities-card
+  child: Emil
+```
+
+Kortet viser alle kommende aktiviteter grupperet pr. barn, også dem der
+allerede er besvaret. Hver række viser titel, dato, tidspunkt og status med
+**Tilmeld** og **Frameld** direkte på rækken. **Frameld** åbner et kommentarfelt;
+skriv begrundelsen og tryk **Send afbud**. **Annuller** lukker formularen uden
+at sende noget. **Tilmelding lukket** skjuler kun Tilmeld-knappen: afbud kan
+stadig være muligt, fx når barnet er tilmeldt som standard. DBU validerer den
+konkrete handling. Fejl vises i kortet, og kommentarer beholdes ved opdateringer
+og fejl.
+Kortet erstatter den separate aktivitetsliste. Beskedsvar er ikke implementeret.
+
+Hvis kontoens sensor har et andet entity-id, angives `children_entity`.
+Ved flere Kampklar-konti angives også kontoens `config_entry_id` i kortets YAML,
+så handlingerne sendes til den rigtige konto. Kortet har ingen ekstra
+HACS-afhængigheder og kræver ingen input-hjælpere.
 
 ## Indstillinger
 
@@ -179,6 +233,11 @@ logger:
 næste opdatering, når rækken er væk fra KampKlar-vælgeren. Vil du rydde op med
 det samme: slet enheden under **Settings → Devices & Services → Kampklar**.
 
+**Dubletter af enheder uden entiteter.** Gamle integrationer brugte andre
+interne ID'er, og tomme enheder kan være blevet efterladt under migreringen.
+Fra v0.6.2 kan de slettes via enhedens side → ⋮ → Slet. Integrationen tillader
+kun sletning af enheder uden entiteter; aktive enheder beskyttes.
+
 **Ingen børn overhovedet.** Loggen siger hvad siden indeholdt. Står der at
 KampKlar-siden hverken havde hold eller vælger, har DBU lagt siden om igen —
 åbn et issue.
@@ -201,7 +260,8 @@ POC-script + parsere ligger i [`scripts/`](scripts/). Sæt en venv op:
 cd scripts
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m pytest test_parsers.py
+.venv/bin/python -m pytest
+node --test test_dashboard.mjs
 ```
 
 Testene kører mod anonymiserede fixtures i [`scripts/fixtures/`](scripts/fixtures/)
